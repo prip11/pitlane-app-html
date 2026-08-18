@@ -1,0 +1,8 @@
+FAIL
+PITWALL automated build/browser test failed.
+Build outcome: failure
+Syntax outcome: skipped
+Browser install outcome: skipped
+Smoke outcome: skipped
+--- smoke log ---
+--- http log ---
