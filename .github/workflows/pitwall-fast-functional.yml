@@ -32,7 +32,9 @@ jobs:
           if prop not in s:
               if marker not in s: raise RuntimeError('Recharts script marker missing')
               s=s.replace(marker,prop+'\n'+marker)
-              p.write_text(s)
+          if '<link rel="icon" href="data:,">' not in s:
+              s=s.replace('</head>','<link rel="icon" href="data:,"></head>')
+          p.write_text(s)
           print('PropTypes bytes:',len(data))
           print('Corrected index ready')
           PY
@@ -72,7 +74,7 @@ jobs:
             };
 
             step('login render');
-            await page.goto('http://127.0.0.1:8000/index.html?fast=4',{waitUntil:'networkidle',timeout:20000});
+            await page.goto('http://127.0.0.1:8000/index.html?fast=5',{waitUntil:'networkidle',timeout:20000});
             try { await page.waitForSelector('.login-bg',{state:'visible',timeout:10000}); } catch(e){ await dump('LOGIN TIMEOUT'); throw e; }
             await dump('LOGIN OK');
 
@@ -110,8 +112,10 @@ jobs:
             await page.getByText(/DEMO · OVERVIEW/).waitFor({timeout:10000});
             if(await page.locator('.car-card').count()<5) throw new Error('Overview cards missing');
             await page.locator('.tab').filter({hasText:'tires'}).click();
-            await page.waitForTimeout(500);
-            if(await page.locator('svg').count()<1) throw new Error('Tire charts missing');
+            await page.waitForTimeout(300);
+            const tireSections=await page.locator('.sec').count();
+            const currentSetLabels=await page.getByText('Current Set',{exact:true}).count();
+            if(tireSections<5||currentSetLabels<5) throw new Error(`Overview tire status missing sections=${tireSections} currentSet=${currentSetLabels}`);
             await page.getByRole('button',{name:'Exit'}).click();
 
             step('crew');
@@ -124,7 +128,8 @@ jobs:
             if(!presence) throw new Error('Crew presence not saved');
 
             if(errors.length) throw new Error(errors.join(' | '));
-            console.log('PASS: Lead + simulation + persistence + Overview + charts + Crew');
+            if(failed.length) throw new Error('Failed requests: '+failed.join(' | '));
+            console.log('PASS: Lead + simulation + persistence + Overview tire status + Crew');
             await browser.close();
           })().catch(e=>{console.error('FAIL:',e);process.exit(1)});
           JS
@@ -145,7 +150,7 @@ jobs:
           } > fast-functional-result.txt
           if [ '${{ steps.e2e.outcome }}' = 'success' ]; then
             git add index.html vendor/prop-types.min.js fast-functional-result.txt
-            git commit -m 'Publish functionally tested PITWALL PropTypes fix' || true
+            git commit -m 'Publish functionally tested PITWALL static build' || true
           else
             git add fast-functional-result.txt
             git commit -m 'Record PITWALL fast functional result' || true
