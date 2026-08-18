@@ -1,0 +1,134 @@
+name: PITWALL functional browser test
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/pitwall-functional-test.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  functional-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Chromium test runtime
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install playwright@1.55.0 --no-save
+          npx playwright install --with-deps chromium
+
+      - name: Run PITWALL end-to-end test
+        id: e2e
+        continue-on-error: true
+        run: |
+          python3 -m http.server 8000 --bind 127.0.0.1 >/tmp/pitwall-functional-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+          cat > /tmp/pitwall-functional.js <<'JS'
+          const { chromium }=require('playwright');
+          (async()=>{
+            const browser=await chromium.launch({headless:true});
+            const page=await browser.newPage({viewport:{width:390,height:844}});
+            const errors=[];
+            page.on('pageerror',e=>errors.push('PAGE: '+String(e)));
+            page.on('console',m=>{if(m.type()==='error') errors.push('CONSOLE: '+m.text())});
+            const step=s=>console.log('STEP:',s);
+
+            step('open login');
+            await page.goto('http://127.0.0.1:8000/index.html?functional=1',{waitUntil:'networkidle',timeout:30000});
+            await page.waitForSelector('.login-bg',{state:'visible',timeout:15000});
+
+            step('lead login');
+            await page.getByRole('button',{name:/Lead/}).click();
+            await page.getByRole('heading',{name:'Lead Access'}).waitFor();
+            await page.getByRole('button',{name:'Enter Lead'}).click();
+            await page.getByText(/DEMO · LEAD/).waitFor({timeout:10000});
+            if(await page.locator('.car-card').count()<5) throw new Error('Lead fleet cards missing');
+
+            step('start simulator');
+            await page.locator('.tab').filter({hasText:'settings'}).click();
+            await page.getByRole('button',{name:/Start Live Simulation/}).click();
+            await page.getByText(/SIMULATION ACTIVE/).waitFor({timeout:10000});
+            await page.waitForFunction(()=>{
+              let total=0;
+              for(let i=0;i<localStorage.length;i++){
+                const k=localStorage.key(i);
+                if(k&&k.startsWith('pitwall-demo-v1-car-')){
+                  try{const c=JSON.parse(localStorage.getItem(k));total+=(c.laps||[]).length}catch(e){}
+                }
+              }
+              return total>0;
+            },null,{timeout:10000});
+            const totals=await page.evaluate(()=>{
+              let laps=0,cars=0;
+              for(let i=0;i<localStorage.length;i++){
+                const k=localStorage.key(i);
+                if(k&&k.startsWith('pitwall-demo-v1-car-')){
+                  const c=JSON.parse(localStorage.getItem(k));cars++;laps+=(c.laps||[]).length;
+                }
+              }
+              return {cars,laps};
+            });
+            console.log('SIM DATA',JSON.stringify(totals));
+            if(totals.cars<5||totals.laps<5) throw new Error('Simulator did not populate fleet data');
+
+            step('persistence reload');
+            await page.reload({waitUntil:'networkidle'});
+            await page.waitForSelector('.login-bg',{state:'visible',timeout:10000});
+            const persisted=await page.evaluate(()=>{
+              let laps=0;for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('pitwall-demo-v1-car-')){try{laps+=(JSON.parse(localStorage.getItem(k)).laps||[]).length}catch(e){}}}return laps;
+            });
+            if(persisted<5) throw new Error('Demo data did not survive reload');
+
+            step('overview login');
+            await page.getByRole('button',{name:/Overview/}).click();
+            await page.getByRole('button',{name:'Enter Overview'}).click();
+            await page.getByText(/DEMO · OVERVIEW/).waitFor({timeout:10000});
+            if(await page.locator('.car-card').count()<5) throw new Error('Overview fleet cards missing');
+            await page.locator('.tab').filter({hasText:'tires'}).click();
+            await page.waitForTimeout(500);
+            if(await page.locator('svg').count()<1) throw new Error('Overview tire charts did not render');
+            await page.getByRole('button',{name:'Exit'}).click();
+            await page.waitForSelector('.login-bg',{state:'visible'});
+
+            step('crew login');
+            await page.getByRole('button',{name:/Crew/}).click();
+            await page.getByPlaceholder('e.g. Marco').fill('CI Tester');
+            await page.getByRole('button',{name:'Enter Pit'}).click();
+            await page.getByText(/DEMO · CREW/).waitFor({timeout:10000});
+            const userSaved=await page.evaluate(()=>Array.from({length:localStorage.length},(_,i)=>localStorage.key(i)).some(k=>k&&k.startsWith('pitwall-demo-user-car-v1-')));
+            if(!userSaved) throw new Error('Crew presence did not persist');
+
+            if(errors.length) throw new Error(errors.join(' | '));
+            await page.screenshot({path:'pitwall-functional.png',fullPage:true});
+            console.log('PASS: Lead + simulator + persistence + Overview + charts + Crew');
+            await browser.close();
+          })().catch(e=>{console.error('FAIL:',e);process.exit(1)});
+          JS
+          set -o pipefail
+          node /tmp/pitwall-functional.js 2>&1 | tee /tmp/pitwall-functional.log
+
+      - name: Record functional result
+        if: always()
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          {
+            if [ '${{ steps.e2e.outcome }}' = 'success' ]; then echo 'PASS'; else echo 'FAIL'; fi
+            echo 'PITWALL end-to-end functional browser test.'
+            echo 'Outcome: ${{ steps.e2e.outcome }}'
+            echo '--- test log ---'
+            cat /tmp/pitwall-functional.log 2>/dev/null || true
+          } > functional-result.txt
+          git add functional-result.txt
+          git commit -m 'Record PITWALL functional test result' || true
+          git push || true
+
+      - name: Fail job if functional test failed
+        if: steps.e2e.outcome != 'success'
+        run: exit 1
