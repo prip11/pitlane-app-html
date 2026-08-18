@@ -1,12 +1,13 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#111214"><title>PITWALL DEMO</title></head><body style="margin:0;background:#111214;color:#eeeef4;font-family:Arial,sans-serif"><div id="boot" style="min-height:100vh;display:flex;align-items:center;justify-content:center">PITWALL loading…</div>
-<script src="part1.js"></script>
-<script src="part2.js"></script>
-<script src="part3.js"></script>
-<script src="part4.js"></script>
-<script src="part5.js"></script>
-<script src="part6a.js"></script>
-<script src="part6b.js"></script>
-<script src="part6c.js"></script>
-<script src="part7.js"></script>
-<script src="part8.js"></script>
-<script>(async()=>{try{const b=(window.PITWALL_PARTS||[]).join("");const a=Uint8Array.from(atob(b),c=>c.charCodeAt(0));const ds=new DecompressionStream("gzip");const t=await new Response(new Blob([a]).stream().pipeThrough(ds)).text();document.open();document.write(t);document.close()}catch(e){document.getElementById("boot").innerHTML="PITWALL failed to start.<br><br>"+e;console.error(e)}})();</script></body></html>
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#111214"><title>PITWALL DEMO</title></head><body style="margin:0;background:#111214;color:#eeeef4;font-family:Arial,sans-serif"><div id="boot" style="min-height:100vh;display:flex;align-items:center;justify-content:center"><div>PITWALL loading…<br><small style="color:#8b8d92">Browser build v2</small></div></div>
+<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+<script src="part1.js?v=2"></script>
+<script src="part2.js?v=2"></script>
+<script src="part3.js?v=2"></script>
+<script src="part4.js?v=2"></script>
+<script src="part5.js?v=2"></script>
+<script src="part6a.js?v=2"></script>
+<script src="part6b.js?v=2"></script>
+<script src="part6c.js?v=2"></script>
+<script src="part7.js?v=2"></script>
+<script src="part8.js?v=2"></script>
+<script>(async()=>{const boot=document.getElementById('boot');try{const parts=window.PITWALL_PARTS||[];if(parts.length!==10)throw new Error('App payload incomplete ('+parts.length+'/10)');const b=parts.join('');const a=Uint8Array.from(atob(b),c=>c.charCodeAt(0));let t;if(typeof DecompressionStream==='function'){try{const ds=new DecompressionStream('gzip');t=await new Response(new Blob([a]).stream().pipeThrough(ds)).text()}catch(_){t=null}}if(!t){if(!window.pako)throw new Error('Decompressor unavailable');t=new TextDecoder().decode(window.pako.ungzip(a))}document.open();document.write(t);document.close()}catch(e){boot.innerHTML='<div style="padding:24px">PITWALL failed to start.<br><br><small>'+String(e)+'</small></div>';console.error(e)}})();</script></body></html>
