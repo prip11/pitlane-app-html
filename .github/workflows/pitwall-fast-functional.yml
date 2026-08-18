@@ -1,0 +1,121 @@
+name: PITWALL fast functional test
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/pitwall-fast-functional.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fast-functional:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare browser driver
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install playwright-core@1.55.0 --no-save
+          (which google-chrome || which chromium || which chromium-browser) | tee /tmp/browser-path
+          BROWSER=$(cat /tmp/browser-path)
+          "$BROWSER" --version
+
+      - name: Run fast PITWALL functional test
+        id: e2e
+        continue-on-error: true
+        run: |
+          python3 -m http.server 8000 --bind 127.0.0.1 >/tmp/pitwall-fast-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 2
+          cat > /tmp/pitwall-fast.js <<'JS'
+          const { chromium }=require('playwright-core');
+          const fs=require('fs');
+          (async()=>{
+            const executablePath=fs.readFileSync('/tmp/browser-path','utf8').trim();
+            const browser=await chromium.launch({headless:true,executablePath,args:['--no-sandbox']});
+            const page=await browser.newPage({viewport:{width:390,height:844}});
+            const errors=[]; const step=s=>console.log('STEP:',s);
+            page.on('pageerror',e=>errors.push('PAGE: '+String(e)));
+            page.on('console',m=>{if(m.type()==='error') errors.push('CONSOLE: '+m.text())});
+
+            step('login render');
+            await page.goto('http://127.0.0.1:8000/index.html?fast=1',{waitUntil:'networkidle',timeout:20000});
+            await page.waitForSelector('.login-bg',{state:'visible',timeout:10000});
+
+            step('lead');
+            await page.getByRole('button',{name:/Lead/}).click();
+            await page.getByRole('button',{name:'Enter Lead'}).click();
+            await page.getByText(/DEMO · LEAD/).waitFor({timeout:10000});
+            if(await page.locator('.car-card').count()<5) throw new Error('Lead cards missing');
+
+            step('simulation');
+            await page.locator('.tab').filter({hasText:'settings'}).click();
+            await page.getByRole('button',{name:/Start Live Simulation/}).click();
+            await page.getByText(/SIMULATION ACTIVE/).waitFor({timeout:10000});
+            await page.waitForFunction(()=>{
+              let laps=0,cars=0;
+              for(let i=0;i<localStorage.length;i++){
+                const k=localStorage.key(i);
+                if(k&&k.startsWith('pitwall-demo-v1-car-')){try{const c=JSON.parse(localStorage.getItem(k));cars++;laps+=(c.laps||[]).length}catch(e){}}
+              }
+              return cars>=5&&laps>=5;
+            },null,{timeout:12000});
+            const before=await page.evaluate(()=>{let laps=0;for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('pitwall-demo-v1-car-')){try{laps+=(JSON.parse(localStorage.getItem(k)).laps||[]).length}catch(e){}}}return laps});
+            console.log('laps before reload',before);
+
+            step('reload persistence');
+            await page.reload({waitUntil:'networkidle'});
+            await page.waitForSelector('.login-bg',{state:'visible',timeout:10000});
+            const after=await page.evaluate(()=>{let laps=0;for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('pitwall-demo-v1-car-')){try{laps+=(JSON.parse(localStorage.getItem(k)).laps||[]).length}catch(e){}}}return laps});
+            if(after<5) throw new Error('Persisted laps missing after reload');
+
+            step('overview');
+            await page.getByRole('button',{name:/Overview/}).click();
+            await page.getByRole('button',{name:'Enter Overview'}).click();
+            await page.getByText(/DEMO · OVERVIEW/).waitFor({timeout:10000});
+            if(await page.locator('.car-card').count()<5) throw new Error('Overview cards missing');
+            await page.locator('.tab').filter({hasText:'tires'}).click();
+            await page.waitForTimeout(500);
+            if(await page.locator('svg').count()<1) throw new Error('Tire charts missing');
+            await page.getByRole('button',{name:'Exit'}).click();
+
+            step('crew');
+            await page.waitForSelector('.login-bg',{state:'visible'});
+            await page.getByRole('button',{name:/Crew/}).click();
+            await page.getByPlaceholder('e.g. Marco').fill('CI Tester');
+            await page.getByRole('button',{name:'Enter Pit'}).click();
+            await page.getByText(/DEMO · CREW/).waitFor({timeout:10000});
+            const presence=await page.evaluate(()=>Array.from({length:localStorage.length},(_,i)=>localStorage.key(i)).some(k=>k&&k.startsWith('pitwall-demo-user-car-v1-')));
+            if(!presence) throw new Error('Crew presence not saved');
+
+            if(errors.length) throw new Error(errors.join(' | '));
+            console.log('PASS: Lead + simulation + persistence + Overview + charts + Crew');
+            await browser.close();
+          })().catch(e=>{console.error('FAIL:',e);process.exit(1)});
+          JS
+          set -o pipefail
+          node /tmp/pitwall-fast.js 2>&1 | tee /tmp/pitwall-fast.log
+
+      - name: Record fast functional result
+        if: always()
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          {
+            if [ '${{ steps.e2e.outcome }}' = 'success' ]; then echo 'PASS'; else echo 'FAIL'; fi
+            echo 'PITWALL fast end-to-end browser test.'
+            echo 'Outcome: ${{ steps.e2e.outcome }}'
+            echo '--- log ---'
+            cat /tmp/pitwall-fast.log 2>/dev/null || true
+          } > fast-functional-result.txt
+          git add fast-functional-result.txt
+          git commit -m 'Record PITWALL fast functional result' || true
+          git push || true
+
+      - name: Fail if test failed
+        if: steps.e2e.outcome != 'success'
+        run: exit 1
