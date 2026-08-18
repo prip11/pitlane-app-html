@@ -1,2 +1,10 @@
-<!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>PITWALL</title></head><body style="margin:0;background:#111214;color:#eeeef4;font-family:Arial,sans-serif"><div style="min-height:100vh;display:flex;align-items:center;justify-content:center">PITWALL loading…</div><script>document.body.innerHTML='<div style="padding:24px;font-family:Arial,sans-serif">PITWALL repository connection test successful.</div>';</script></body></html>
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#111214"><title>PITWALL DEMO</title></head><body style="margin:0;background:#111214;color:#eeeef4;font-family:Arial,sans-serif"><div id="boot" style="min-height:100vh;display:flex;align-items:center;justify-content:center">PITWALL loading…</div>
+<script src="part1.js"></script>
+<script src="part2.js"></script>
+<script src="part3.js"></script>
+<script src="part4.js"></script>
+<script src="part5.js"></script>
+<script src="part6.js"></script>
+<script src="part7.js"></script>
+<script src="part8.js"></script>
+<script>(async()=>{try{const b=(window.PITWALL_PARTS||[]).join("");const a=Uint8Array.from(atob(b),c=>c.charCodeAt(0));const ds=new DecompressionStream("gzip");const t=await new Response(new Blob([a]).stream().pipeThrough(ds)).text();document.open();document.write(t);document.close()}catch(e){document.getElementById("boot").innerHTML="PITWALL failed to start.<br><br>"+e;console.error(e)}})();</script></body></html>
