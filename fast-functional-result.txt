@@ -1,6 +1,6 @@
-FAIL
+PASS
 PITWALL fast end-to-end browser test.
-Outcome: failure
+Outcome: success
 --- log ---
 BROWSER: Google Chrome 151.0.7922.108
 STEP: login render
@@ -20,13 +20,13 @@ UNITS
 IMPERIAL
 METRIC
 STATE: {"readyState":"complete","React":"object","ReactDOM":"object","PropTypes":"object","Recharts":"object","rootChildren":2,"boot":null,"login":true,"storage":"object"}
-ERRORS: ["CONSOLE: Failed to load resource: the server responded with a status of 404 (File not found)"]
+ERRORS: []
 FAILED_REQUESTS: []
 STEP: lead
 STEP: simulation
 laps before reload 5
 STEP: reload persistence
-laps after reload 6
+laps after reload 5
 STEP: overview
-FAIL: Error: Tire charts missing
-    at /tmp/pitwall-fast.js:61:49
+STEP: crew
+PASS: Lead + simulation + persistence + Overview tire status + Crew
