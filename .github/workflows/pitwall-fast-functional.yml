@@ -32,7 +32,7 @@ jobs:
           trap 'kill $SERVER_PID || true' EXIT
           sleep 2
           cat > /tmp/pitwall-fast.js <<'JS'
-          const { chromium }=require('playwright-core');
+          const { chromium }=require(process.cwd()+'/node_modules/playwright-core');
           const fs=require('fs');
           (async()=>{
             const executablePath=fs.readFileSync('/tmp/browser-path','utf8').trim();
@@ -43,7 +43,7 @@ jobs:
             page.on('console',m=>{if(m.type()==='error') errors.push('CONSOLE: '+m.text())});
 
             step('login render');
-            await page.goto('http://127.0.0.1:8000/index.html?fast=1',{waitUntil:'networkidle',timeout:20000});
+            await page.goto('http://127.0.0.1:8000/index.html?fast=2',{waitUntil:'networkidle',timeout:20000});
             await page.waitForSelector('.login-bg',{state:'visible',timeout:10000});
 
             step('lead');
