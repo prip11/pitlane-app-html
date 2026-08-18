@@ -26,44 +26,37 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Reconstruct direct static PITWALL build
+        id: build
         shell: python
         run: |
           import re, json, base64, gzip, pathlib, urllib.request
-          root = pathlib.Path('.')
-          names = ['part1.js','part2.js','part3.js','part4.js','part5.js','part6a.js','part6b.js','part6c.js','part7.js','part8.js']
+          root=pathlib.Path('.')
+          names=['part1.js','part2.js','part3.js','part4.js','part5.js','part6a.js','part6b.js','part6c.js','part7.js','part8.js']
           parts=[]
           for name in names:
               text=(root/name).read_text()
-              m=re.search(r'push\(("[\s\S]*")\);?\s*$', text)
-              if not m:
-                  raise RuntimeError(f'Invalid payload: {name}')
+              m=re.search(r'push\(("[\s\S]*")\);?\s*$',text)
+              if not m: raise RuntimeError(f'Invalid payload: {name}')
               parts.append(json.loads(m.group(1)))
           html=gzip.decompress(base64.b64decode(''.join(parts))).decode('utf-8')
-          if 'PITWALL DEMO — Fast Browser Build' not in html:
-              raise RuntimeError('PITWALL signature missing after reconstruction')
-
-          vendor=root/'vendor'
-          vendor.mkdir(exist_ok=True)
+          if 'PITWALL DEMO — Fast Browser Build' not in html: raise RuntimeError('PITWALL signature missing')
+          vendor=root/'vendor'; vendor.mkdir(exist_ok=True)
           downloads={
-              'react.min.js':'https://unpkg.com/react@18.3.1/umd/react.production.min.js',
-              'react-dom.min.js':'https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js',
-              'react-is.min.js':'https://unpkg.com/react-is@18.3.1/umd/react-is.production.min.js',
-              'recharts.min.js':'https://unpkg.com/recharts@2.15.3/umd/Recharts.min.js',
-          }
+            'react.min.js':'https://unpkg.com/react@18.3.1/umd/react.production.min.js',
+            'react-dom.min.js':'https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js',
+            'react-is.min.js':'https://unpkg.com/react-is@18.3.1/umd/react-is.production.min.js',
+            'recharts.min.js':'https://unpkg.com/recharts@2.15.3/umd/Recharts.min.js'}
           for fn,url in downloads.items():
-              print('Downloading', url)
-              urllib.request.urlretrieve(url, vendor/fn)
-              if (vendor/fn).stat().st_size < 1000:
-                  raise RuntimeError(f'Vendor download too small: {fn}')
-
-          html=html.replace('<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>', '<script src="vendor/react.min.js"></script>')
-          html=html.replace('<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>', '<script src="vendor/react-dom.min.js"></script>\n<script src="vendor/react-is.min.js"></script>')
-          html=html.replace('<script src="https://unpkg.com/recharts@2.15.3/umd/Recharts.js"></script>', '<script src="vendor/recharts.min.js"></script>')
-          html=html.replace('Fast precompiled build','Static tested build')
+              urllib.request.urlretrieve(url,vendor/fn)
+              if (vendor/fn).stat().st_size<1000: raise RuntimeError(f'Vendor download too small: {fn}')
+          html=html.replace('<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>','<script src="vendor/react.min.js"></script>')
+          html=html.replace('<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>','<script src="vendor/react-dom.min.js"></script>\n<script src="vendor/react-is.min.js"></script>')
+          html=html.replace('<script src="https://unpkg.com/recharts@2.15.3/umd/Recharts.js"></script>','<script src="vendor/recharts.min.js"></script>')
+          html=html.replace('Fast precompiled build','Static browser-tested build')
           (root/'index.html').write_text(html)
-          print('index.html bytes:', (root/'index.html').stat().st_size)
 
       - name: Static JavaScript syntax check
+        id: syntax
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -75,47 +68,71 @@ jobs:
           node --check /tmp/pitwall-inline.js
 
       - name: Install Chromium test runtime
+        id: browser_install
         run: |
           npm init -y >/dev/null 2>&1
           npm install playwright@1.55.0 --no-save
           npx playwright install --with-deps chromium
 
       - name: Browser smoke test
+        id: smoke
         run: |
           python3 -m http.server 8000 --bind 127.0.0.1 >/tmp/pitwall-http.log 2>&1 &
           SERVER_PID=$!
           trap 'kill $SERVER_PID || true' EXIT
           sleep 2
           cat > /tmp/pitwall-test.js <<'JS'
-          const { chromium } = require('playwright');
+          const { chromium }=require('playwright');
           (async()=>{
             const browser=await chromium.launch({headless:true});
             const page=await browser.newPage({viewport:{width:390,height:844}});
             const errors=[];
-            page.on('pageerror',e=>errors.push(String(e)));
-            page.on('console',m=>{ if(m.type()==='error') errors.push(m.text()); });
-            await page.goto('http://127.0.0.1:8000/index.html?ci=1',{waitUntil:'networkidle',timeout:30000});
+            page.on('pageerror',e=>errors.push('PAGE: '+String(e)));
+            page.on('console',m=>{if(m.type()==='error') errors.push('CONSOLE: '+m.text())});
+            await page.goto('http://127.0.0.1:8000/index.html?ci=2',{waitUntil:'networkidle',timeout:30000});
             await page.waitForSelector('.login-bg',{state:'visible',timeout:15000});
             const body=await page.locator('body').innerText();
-            if(body.includes('PITWALL startup failed') || body.includes('PITWALL DEMO loading')) throw new Error('Loader/error text still visible: '+body.slice(0,250));
             const rootCount=await page.locator('#root > *').count();
-            if(rootCount<1) throw new Error('React root did not render');
-            if(errors.length) throw new Error('Browser errors: '+errors.join(' | '));
+            if(body.includes('PITWALL DEMO loading')) throw new Error('Loader still visible');
+            if(rootCount<1) throw new Error('React root empty');
+            if(errors.length) throw new Error(errors.join(' | '));
+            const buttons=await page.locator('button').count();
+            const inputs=await page.locator('input').count();
+            if(buttons<1||inputs<1) throw new Error(`Login controls missing buttons=${buttons} inputs=${inputs}`);
             await page.screenshot({path:'pitwall-smoke.png',fullPage:true});
-            console.log('PASS: PITWALL login rendered cleanly');
+            console.log(`PASS root=${rootCount} buttons=${buttons} inputs=${inputs}`);
             await browser.close();
           })().catch(e=>{console.error(e);process.exit(1)});
           JS
-          node /tmp/pitwall-test.js
+          node /tmp/pitwall-test.js 2>&1 | tee /tmp/pitwall-smoke.log
 
-      - name: Commit tested static build
+      - name: Publish tested build
+        if: success()
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add index.html vendor/
-          if git diff --cached --quiet; then
-            echo 'No generated changes to commit.'
-          else
-            git commit -m 'Publish browser-tested PITWALL static build'
-            git push
-          fi
+          printf 'PASS\nBrowser smoke test completed successfully.\n' > ci-result.txt
+          git add index.html vendor/ ci-result.txt
+          git commit -m 'Publish browser-tested PITWALL static build'
+          git push
+
+      - name: Record CI failure
+        if: failure()
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          {
+            echo 'FAIL'
+            echo 'PITWALL automated build/browser test failed.'
+            echo 'Build outcome: ${{ steps.build.outcome }}'
+            echo 'Syntax outcome: ${{ steps.syntax.outcome }}'
+            echo 'Browser install outcome: ${{ steps.browser_install.outcome }}'
+            echo 'Smoke outcome: ${{ steps.smoke.outcome }}'
+            echo '--- smoke log ---'
+            cat /tmp/pitwall-smoke.log 2>/dev/null || true
+            echo '--- http log ---'
+            cat /tmp/pitwall-http.log 2>/dev/null || true
+          } > ci-result.txt
+          git add ci-result.txt
+          git commit -m 'Record PITWALL CI failure' || true
+          git push || true
