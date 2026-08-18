@@ -49,6 +49,7 @@ jobs:
             'react.min.js':'https://unpkg.com/react@18.3.1/umd/react.production.min.js',
             'react-dom.min.js':'https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js',
             'react-is.min.js':'https://unpkg.com/react-is@18.3.1/umd/react-is.production.min.js',
+            'prop-types.min.js':'https://unpkg.com/prop-types@15.8.1/prop-types.min.js',
             'recharts.js':'https://unpkg.com/recharts@2.15.3/umd/Recharts.js'}
           for fn,url in downloads.items():
               print('downloading',fn,url,flush=True)
@@ -59,7 +60,7 @@ jobs:
               print(fn,'bytes',len(data),flush=True)
               if len(data)<1000: raise RuntimeError(f'Vendor download too small: {fn}')
           html=html.replace('<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>','<script src="vendor/react.min.js"></script>')
-          html=html.replace('<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>','<script src="vendor/react-dom.min.js"></script>\n<script src="vendor/react-is.min.js"></script>')
+          html=html.replace('<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>','<script src="vendor/react-dom.min.js"></script>\n<script src="vendor/react-is.min.js"></script>\n<script src="vendor/prop-types.min.js"></script>')
           html=html.replace('<script src="https://unpkg.com/recharts@2.15.3/umd/Recharts.js"></script>','<script src="vendor/recharts.js"></script>')
           html=html.replace('Fast precompiled build','Static browser-tested build')
           (root/'index.html').write_text(html)
@@ -100,7 +101,7 @@ jobs:
             const errors=[];
             page.on('pageerror',e=>errors.push('PAGE: '+String(e)));
             page.on('console',m=>{if(m.type()==='error') errors.push('CONSOLE: '+m.text())});
-            await page.goto('http://127.0.0.1:8000/index.html?ci=4',{waitUntil:'networkidle',timeout:30000});
+            await page.goto('http://127.0.0.1:8000/index.html?ci=5',{waitUntil:'networkidle',timeout:30000});
             await page.waitForSelector('.login-bg',{state:'visible',timeout:15000});
             const body=await page.locator('body').innerText();
             const rootCount=await page.locator('#root > *').count();
@@ -110,7 +111,6 @@ jobs:
             const buttons=await page.locator('button').count();
             const inputs=await page.locator('input').count();
             if(buttons<1||inputs<1) throw new Error(`Login controls missing buttons=${buttons} inputs=${inputs}`);
-            await page.screenshot({path:'pitwall-smoke.png',fullPage:true});
             console.log(`PASS root=${rootCount} buttons=${buttons} inputs=${inputs}`);
             await browser.close();
           })().catch(e=>{console.error(e);process.exit(1)});
@@ -122,9 +122,9 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          printf 'PASS\nBrowser smoke test completed successfully.\n' > ci-result.txt
+          printf 'PASS\nBrowser smoke test completed successfully with local React, PropTypes, and Recharts.\n' > ci-result.txt
           git add index.html vendor/ ci-result.txt
-          git commit -m 'Publish browser-tested PITWALL static build'
+          git commit -m 'Publish browser-tested PITWALL static build with PropTypes'
           git push
 
       - name: Record CI failure
