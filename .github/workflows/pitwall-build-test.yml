@@ -27,8 +27,10 @@ jobs:
 
       - name: Reconstruct direct static PITWALL build
         id: build
-        shell: python
+        shell: bash
         run: |
+          set -o pipefail
+          python - <<'PY' 2>&1 | tee /tmp/pitwall-build.log
           import re, json, base64, gzip, pathlib, urllib.request
           root=pathlib.Path('.')
           names=['part1.js','part2.js','part3.js','part4.js','part5.js','part6a.js','part6b.js','part6c.js','part7.js','part8.js']
@@ -38,7 +40,9 @@ jobs:
               m=re.search(r'push\(("[\s\S]*")\);?\s*$',text)
               if not m: raise RuntimeError(f'Invalid payload: {name}')
               parts.append(json.loads(m.group(1)))
+          print('payload parts parsed:', len(parts))
           html=gzip.decompress(base64.b64decode(''.join(parts))).decode('utf-8')
+          print('reconstructed bytes:', len(html.encode()))
           if 'PITWALL DEMO — Fast Browser Build' not in html: raise RuntimeError('PITWALL signature missing')
           vendor=root/'vendor'; vendor.mkdir(exist_ok=True)
           downloads={
@@ -47,13 +51,20 @@ jobs:
             'react-is.min.js':'https://unpkg.com/react-is@18.3.1/umd/react-is.production.min.js',
             'recharts.min.js':'https://unpkg.com/recharts@2.15.3/umd/Recharts.min.js'}
           for fn,url in downloads.items():
-              urllib.request.urlretrieve(url,vendor/fn)
-              if (vendor/fn).stat().st_size<1000: raise RuntimeError(f'Vendor download too small: {fn}')
+              print('downloading',fn,url,flush=True)
+              req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 PITWALL-CI'})
+              with urllib.request.urlopen(req,timeout=30) as r:
+                  data=r.read()
+              (vendor/fn).write_bytes(data)
+              print(fn,'bytes',len(data),flush=True)
+              if len(data)<1000: raise RuntimeError(f'Vendor download too small: {fn}')
           html=html.replace('<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>','<script src="vendor/react.min.js"></script>')
           html=html.replace('<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>','<script src="vendor/react-dom.min.js"></script>\n<script src="vendor/react-is.min.js"></script>')
           html=html.replace('<script src="https://unpkg.com/recharts@2.15.3/umd/Recharts.js"></script>','<script src="vendor/recharts.min.js"></script>')
           html=html.replace('Fast precompiled build','Static browser-tested build')
           (root/'index.html').write_text(html)
+          print('direct index written')
+          PY
 
       - name: Static JavaScript syntax check
         id: syntax
@@ -89,7 +100,7 @@ jobs:
             const errors=[];
             page.on('pageerror',e=>errors.push('PAGE: '+String(e)));
             page.on('console',m=>{if(m.type()==='error') errors.push('CONSOLE: '+m.text())});
-            await page.goto('http://127.0.0.1:8000/index.html?ci=2',{waitUntil:'networkidle',timeout:30000});
+            await page.goto('http://127.0.0.1:8000/index.html?ci=3',{waitUntil:'networkidle',timeout:30000});
             await page.waitForSelector('.login-bg',{state:'visible',timeout:15000});
             const body=await page.locator('body').innerText();
             const rootCount=await page.locator('#root > *').count();
@@ -128,6 +139,8 @@ jobs:
             echo 'Syntax outcome: ${{ steps.syntax.outcome }}'
             echo 'Browser install outcome: ${{ steps.browser_install.outcome }}'
             echo 'Smoke outcome: ${{ steps.smoke.outcome }}'
+            echo '--- build log ---'
+            cat /tmp/pitwall-build.log 2>/dev/null || true
             echo '--- smoke log ---'
             cat /tmp/pitwall-smoke.log 2>/dev/null || true
             echo '--- http log ---'
