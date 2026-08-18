@@ -1,0 +1,134 @@
+name: PITWALL live Pages test
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/pitwall-live-pages-test.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  live-pages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare Chrome
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install playwright-core@1.55.0 --no-save
+          (which google-chrome || which chromium || which chromium-browser) | tee /tmp/browser-path
+          BROWSER=$(cat /tmp/browser-path)
+          "$BROWSER" --version | tee /tmp/browser-version
+
+      - name: Test live GitHub Pages
+        id: live
+        continue-on-error: true
+        run: |
+          cat > /tmp/pitwall-live.js <<'JS'
+          const { chromium }=require(process.cwd()+'/node_modules/playwright-core');
+          const fs=require('fs');
+          const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+          (async()=>{
+            const executablePath=fs.readFileSync('/tmp/browser-path','utf8').trim();
+            console.log('BROWSER:',fs.readFileSync('/tmp/browser-version','utf8').trim());
+            const browser=await chromium.launch({headless:true,executablePath,args:['--no-sandbox']});
+            const page=await browser.newPage({viewport:{width:390,height:844}});
+            const errors=[]; const failed=[];
+            page.on('pageerror',e=>errors.push('PAGE: '+String(e)));
+            page.on('console',m=>{if(m.type()==='error') errors.push('CONSOLE: '+m.text())});
+            page.on('requestfailed',r=>failed.push(r.url()+' :: '+(r.failure()?.errorText||'unknown')));
+            const base='https://prip11.github.io/pitlane-app-html/';
+
+            let ready=false;
+            for(let attempt=1;attempt<=8;attempt++){
+              console.log('LIVE LOAD ATTEMPT',attempt);
+              errors.length=0; failed.length=0;
+              await page.goto(base+'?meeting-test='+Date.now(),{waitUntil:'networkidle',timeout:30000});
+              const body=(await page.locator('body').innerText().catch(()=>''));
+              const state=await page.evaluate(()=>({login:!!document.querySelector('.login-bg'),boot:document.querySelector('#boot')?.innerText??null,React:typeof React,PropTypes:typeof PropTypes,Recharts:typeof Recharts})).catch(e=>({error:String(e)}));
+              console.log('LIVE STATE',JSON.stringify(state));
+              console.log('LIVE BODY',body.slice(0,500));
+              if(state.login){ready=true;break;}
+              await sleep(10000);
+            }
+            if(!ready) throw new Error('Live Pages never reached PITWALL login. Errors='+errors.join(' | ')+' failed='+failed.join(' | '));
+            if(errors.length) throw new Error('Live startup JS errors: '+errors.join(' | '));
+            if(failed.length) throw new Error('Live failed requests: '+failed.join(' | '));
+
+            console.log('STEP lead');
+            await page.getByRole('button',{name:/Lead/}).click();
+            await page.getByRole('button',{name:'Enter Lead'}).click();
+            await page.getByText(/DEMO · LEAD/).waitFor({timeout:10000});
+            if(await page.locator('.car-card').count()<5) throw new Error('Live Lead cards missing');
+
+            console.log('STEP simulation');
+            await page.locator('.tab').filter({hasText:'settings'}).click();
+            await page.getByRole('button',{name:/Start Live Simulation/}).click();
+            await page.getByText(/SIMULATION ACTIVE/).waitFor({timeout:10000});
+            await page.waitForFunction(()=>{
+              let laps=0,cars=0;
+              for(let i=0;i<localStorage.length;i++){
+                const k=localStorage.key(i);
+                if(k&&k.startsWith('pitwall-demo-v1-car-')){try{const c=JSON.parse(localStorage.getItem(k));cars++;laps+=(c.laps||[]).length}catch(e){}}
+              }
+              return cars>=5&&laps>=5;
+            },null,{timeout:12000});
+            const before=await page.evaluate(()=>{let laps=0;for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('pitwall-demo-v1-car-')){try{laps+=(JSON.parse(localStorage.getItem(k)).laps||[]).length}catch(e){}}}return laps});
+            console.log('LIVE laps before reload',before);
+
+            console.log('STEP reload');
+            await page.reload({waitUntil:'networkidle'});
+            await page.waitForSelector('.login-bg',{state:'visible',timeout:10000});
+            const after=await page.evaluate(()=>{let laps=0;for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('pitwall-demo-v1-car-')){try{laps+=(JSON.parse(localStorage.getItem(k)).laps||[]).length}catch(e){}}}return laps});
+            console.log('LIVE laps after reload',after);
+            if(after<5) throw new Error('Live persistence failed');
+
+            console.log('STEP overview');
+            await page.getByRole('button',{name:/Overview/}).click();
+            await page.getByRole('button',{name:'Enter Overview'}).click();
+            await page.getByText(/DEMO · OVERVIEW/).waitFor({timeout:10000});
+            if(await page.locator('.car-card').count()<5) throw new Error('Live Overview cards missing');
+            await page.locator('.tab').filter({hasText:'tires'}).click();
+            await page.waitForTimeout(300);
+            if(await page.getByText('Current Set',{exact:true}).count()<5) throw new Error('Live tire status missing');
+            await page.getByRole('button',{name:'Exit'}).click();
+
+            console.log('STEP crew');
+            await page.waitForSelector('.login-bg',{state:'visible'});
+            await page.getByRole('button',{name:/Crew/}).click();
+            await page.getByPlaceholder('e.g. Marco').fill('Live CI');
+            await page.getByRole('button',{name:'Enter Pit'}).click();
+            await page.getByText(/DEMO · CREW/).waitFor({timeout:10000});
+
+            if(errors.length) throw new Error('Live JS errors after workflow: '+errors.join(' | '));
+            if(failed.length) throw new Error('Live failed requests after workflow: '+failed.join(' | '));
+            console.log('PASS: LIVE PAGES login + Lead + simulation + persistence + Overview + Crew');
+            await browser.close();
+          })().catch(e=>{console.error('FAIL:',e);process.exit(1)});
+          JS
+          set -o pipefail
+          node /tmp/pitwall-live.js 2>&1 | tee /tmp/pitwall-live.log
+
+      - name: Record live Pages result
+        if: always()
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          {
+            if [ '${{ steps.live.outcome }}' = 'success' ]; then echo 'PASS'; else echo 'FAIL'; fi
+            echo 'PITWALL LIVE GITHUB PAGES browser test.'
+            echo 'Outcome: ${{ steps.live.outcome }}'
+            echo '--- log ---'
+            cat /tmp/pitwall-live.log 2>/dev/null || true
+          } > live-pages-result.txt
+          git add live-pages-result.txt
+          git commit -m 'Record PITWALL live Pages test result' || true
+          git pull --rebase origin main || true
+          git push || true
+
+      - name: Fail if live test failed
+        if: steps.live.outcome != 'success'
+        run: exit 1
