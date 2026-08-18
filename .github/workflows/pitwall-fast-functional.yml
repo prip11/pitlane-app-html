@@ -21,7 +21,7 @@ jobs:
           npm install playwright-core@1.55.0 --no-save
           (which google-chrome || which chromium || which chromium-browser) | tee /tmp/browser-path
           BROWSER=$(cat /tmp/browser-path)
-          "$BROWSER" --version
+          "$BROWSER" --version | tee /tmp/browser-version
 
       - name: Run fast PITWALL functional test
         id: e2e
@@ -36,15 +36,39 @@ jobs:
           const fs=require('fs');
           (async()=>{
             const executablePath=fs.readFileSync('/tmp/browser-path','utf8').trim();
+            console.log('BROWSER:',fs.readFileSync('/tmp/browser-version','utf8').trim());
             const browser=await chromium.launch({headless:true,executablePath,args:['--no-sandbox']});
             const page=await browser.newPage({viewport:{width:390,height:844}});
-            const errors=[]; const step=s=>console.log('STEP:',s);
+            const errors=[]; const failed=[]; const step=s=>console.log('STEP:',s);
             page.on('pageerror',e=>errors.push('PAGE: '+String(e)));
             page.on('console',m=>{if(m.type()==='error') errors.push('CONSOLE: '+m.text())});
+            page.on('requestfailed',r=>failed.push(r.url()+' :: '+(r.failure()?.errorText||'unknown')));
+
+            const dump=async(label)=>{
+              console.log('--- DIAGNOSTIC',label,'---');
+              console.log('URL:',page.url());
+              console.log('BODY:',(await page.locator('body').innerText().catch(()=>'' )).slice(0,1200));
+              console.log('HTML:',(await page.content().catch(()=>'' )).slice(0,1600));
+              const state=await page.evaluate(()=>({
+                readyState:document.readyState,
+                React:typeof window.React,
+                ReactDOM:typeof window.ReactDOM,
+                Recharts:typeof window.Recharts,
+                rootChildren:document.querySelector('#root')?.children.length ?? -1,
+                boot:document.querySelector('#boot')?.innerText ?? null,
+                login:!!document.querySelector('.login-bg'),
+                storage:typeof window.storage
+              })).catch(e=>({evaluateError:String(e)}));
+              console.log('STATE:',JSON.stringify(state));
+              console.log('ERRORS:',JSON.stringify(errors));
+              console.log('FAILED_REQUESTS:',JSON.stringify(failed));
+            };
 
             step('login render');
-            await page.goto('http://127.0.0.1:8000/index.html?fast=2',{waitUntil:'networkidle',timeout:20000});
-            await page.waitForSelector('.login-bg',{state:'visible',timeout:10000});
+            await page.goto('http://127.0.0.1:8000/index.html?fast=3',{waitUntil:'networkidle',timeout:20000});
+            try { await page.waitForSelector('.login-bg',{state:'visible',timeout:10000}); }
+            catch(e){ await dump('LOGIN TIMEOUT'); throw e; }
+            await dump('LOGIN OK');
 
             step('lead');
             await page.getByRole('button',{name:/Lead/}).click();
