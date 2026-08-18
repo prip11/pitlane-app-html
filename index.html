@@ -1,1 +1,2534 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#111214"><title>PITWALL DEMO</title></head><body style="margin:0;background:#111214;color:#eeeef4;font-family:Arial,sans-serif"><div id="boot" style="min-height:100vh;display:flex;align-items:center;justify-content:center"><div>PITWALL DEMO loading…<br><small style="color:#8b8d92">Browser app v5</small></div></div><script>(async()=>{const boot=document.getElementById('boot');const show=s=>boot.innerHTML='<div>PITWALL DEMO loading…<br><small style="color:#8b8d92">Browser app v5 · '+s+'</small></div>';const fail=(s,e)=>{boot.innerHTML='<div style="padding:24px;max-width:520px"><b>PITWALL '+s+' error</b><br><br><small>'+String(e)+'</small></div>';console.error(s,e)};try{if(typeof DecompressionStream!=='function')throw new Error('gzip decompression unavailable');const names=['part1.js','part2.js','part3.js','part4.js','part5.js','part6a.js','part6b.js','part6c.js','part7.js','part8.js'];show('loading package');const texts=await Promise.all(names.map(async n=>{const r=await fetch(n+'?v=5',{cache:'no-store'});if(!r.ok)throw new Error(n+' HTTP '+r.status);return r.text()}));const parts=texts.map((txt,i)=>{const m=txt.match(/push\(("[\s\S]*")\);?\s*$/);if(!m)throw new Error(names[i]+' payload invalid');return JSON.parse(m[1])});show('unpacking');const a=Uint8Array.from(atob(parts.join('')),c=>c.charCodeAt(0));const ds=new DecompressionStream('gzip');let t=await new Response(new Blob([a]).stream().pipeThrough(ds)).text();if(!t.includes('PITWALL DEMO — Fast Browser Build'))throw new Error('app signature missing');t=t.replace('<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>','<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>\n<script crossorigin src="https://unpkg.com/react-is@18.3.1/umd/react-is.production.min.js"></script>');t=t.replace('<script src="https://unpkg.com/recharts@2.15.3/umd/Recharts.js"></script>','<script src="https://unpkg.com/recharts@2.15.3/umd/Recharts.min.js"></script>');t=t.replace('Fast precompiled build','Browser app v5 · starting PITWALL');show('starting PITWALL');document.open();document.write(t);document.close()}catch(e){fail('loader',e)}})();</script></body></html>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#111214"><title>PITWALL DEMO — Fast Browser Build</title><style>html,body,#root{margin:0;min-height:100%;background:#111214}#boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#111214;color:#eeeef4;font:14px Arial,sans-serif;z-index:99999}#boot small{display:block;margin-top:8px;color:#8b8d92}</style></head><body><div id="root"></div><div id="boot"><div>PITWALL DEMO loading…<small>Static browser-tested build</small></div></div>
+<script src="vendor/react.min.js"></script>
+<script src="vendor/react-dom.min.js"></script>
+<script src="vendor/react-is.min.js"></script>
+<script src="vendor/recharts.js"></script>
+<script>
+(function(){if(window.storage)return;window.storage={
+async get(key){const value=window.localStorage.getItem(key);return value===null?null:{value};},
+async set(key,value){window.localStorage.setItem(key,String(value));return {key,value:String(value)};},
+async delete(key){window.localStorage.removeItem(key);return {key,deleted:true};},
+async list(prefix){const keys=[];for(let i=0;i<window.localStorage.length;i++){const k=window.localStorage.key(i);if(!prefix||(k&&k.startsWith(prefix)))keys.push(k);}return {keys};}
+};})();
+</script>
+<script>"use strict";
+const { Component, useState, useEffect, useRef, useCallback } = React;
+const recharts_1 = Recharts;
+const TIRE_WARN_KM = 100;
+const TIRE_LIMIT_KM = 120;
+const CIRCUITS = [
+    { name: "Road Atlanta", miles: 2.54, country: "US" },
+    { name: "Calabogie — Full Pro", miles: 3.138, country: "CA" },
+    { name: "Calabogie — East Stadium", miles: 1.740, country: "CA" },
+    { name: "Calabogie — West Circuit", miles: 1.380, country: "CA" },
+];
+const DEFAULT_CARS = Array.from({ length: 20 }, (_, i) => `Car #${i + 1}`);
+const DEFAULT_TIRE_SETS = ["Set A", "Set B", "Set C", "Set D", "Set E", "Set F"];
+const DEMO_BUILD = true;
+const STORAGE_KEY = "pitwall-demo-v1";
+const USERS_KEY = "pitwall-demo-users-v1";
+const CONFIG_KEY = "pitwall-demo-config-v1";
+const DEFAULT_CONFIG = {
+    carNames: Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`Car #${i + 1}`, `Car #${i + 1}`])),
+    tireSetNames: { "Set A": "Set A", "Set B": "Set B", "Set C": "Set C", "Set D": "Set D", "Set E": "Set E", "Set F": "Set F" },
+    activeCars: ["Car #1", "Car #2", "Car #3", "Car #4", "Car #5"],
+    pins: { master: "", overview: "" },
+};
+async function loadConfig() {
+    try {
+        const r = await window.storage.get(CONFIG_KEY, true);
+        return r ? JSON.parse(r.value) : DEFAULT_CONFIG;
+    }
+    catch {
+        return DEFAULT_CONFIG;
+    }
+}
+async function saveConfig(cfg) { return writeStorageJson(CONFIG_KEY, cfg); }
+const initialCarData = () => DEFAULT_CARS.reduce((acc, car) => {
+    acc[car] = { laps: [], totalMileage: 0, fuelUsed: 0, fuelCapacity: 0, fuelPerLap: 0, currentTireSet: "Set A", tireSets: { "Set A": 0 }, tireSetLabels: { "Set A": "Set A" }, notes: [], tasks: [], lastUpdate: null, status: "Idle" };
+    return acc;
+}, {});
+const CAR_STORAGE_PREFIX = "pitwall-demo-v1-car-";
+const carStorageKey = (carName) => `${CAR_STORAGE_PREFIX}${encodeURIComponent(carName)}`;
+const carLockKey = (carName) => `${carStorageKey(carName)}-lock`;
+const USER_CAR_PREFIX = "pitwall-demo-user-car-v1-";
+const userCarKey = (carName) => `${USER_CAR_PREFIX}${encodeURIComponent(carName)}`;
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const makeId = (prefix = "m") => {
+    try {
+        return `${prefix}-${crypto.randomUUID()}`;
+    }
+    catch {
+        return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+};
+function normalizeCarData(car, carName) {
+    const base = initialCarData()[carName] || {
+        laps: [], totalMileage: 0, fuelUsed: 0, fuelCapacity: 0, fuelPerLap: 0,
+        currentTireSet: "Set A", tireSets: { "Set A": 0 }, tireSetLabels: { "Set A": "Set A" },
+        notes: [], tasks: [], lastUpdate: null, status: "Idle"
+    };
+    return {
+        ...base, ...(car || {}),
+        laps: Array.isArray(car === null || car === void 0 ? void 0 : car.laps) ? car.laps : [],
+        tireSets: (car === null || car === void 0 ? void 0 : car.tireSets) && typeof car.tireSets === "object" ? car.tireSets : { "Set A": 0 },
+        tireSetLabels: (car === null || car === void 0 ? void 0 : car.tireSetLabels) && typeof car.tireSetLabels === "object" ? car.tireSetLabels : { "Set A": "Set A" },
+        notes: Array.isArray(car === null || car === void 0 ? void 0 : car.notes) ? car.notes : [],
+        tasks: Array.isArray(car === null || car === void 0 ? void 0 : car.tasks) ? car.tasks : [],
+    };
+}
+async function readStorageJson(key, retries = 3) {
+    let lastError;
+    for (let attempt = 0; attempt < retries; attempt++) {
+        try {
+            const r = await window.storage.get(key, true);
+            return r ? JSON.parse(r.value) : null;
+        }
+        catch (e) {
+            lastError = e;
+            if (attempt < retries - 1)
+                await sleep(150 * (attempt + 1));
+        }
+    }
+    throw lastError || new Error(`Unable to read storage key ${key}`);
+}
+async function writeStorageJson(key, value, retries = 3) {
+    let lastError;
+    for (let attempt = 0; attempt < retries; attempt++) {
+        try {
+            await window.storage.set(key, JSON.stringify(value), true);
+            return true;
+        }
+        catch (e) {
+            lastError = e;
+            if (attempt < retries - 1)
+                await sleep(250 * (attempt + 1));
+        }
+    }
+    console.error("PITWALL storage write failed", lastError);
+    return false;
+}
+async function loadData() {
+    try {
+        let legacy = null;
+        try {
+            legacy = await readStorageJson(STORAGE_KEY);
+        }
+        catch { }
+        const result = initialCarData();
+        let foundAny = false;
+        await Promise.all(DEFAULT_CARS.map(async (carName) => {
+            try {
+                const car = await readStorageJson(carStorageKey(carName));
+                if (car) {
+                    result[carName] = normalizeCarData(car, carName);
+                    foundAny = true;
+                }
+                else if (legacy === null || legacy === void 0 ? void 0 : legacy[carName]) {
+                    result[carName] = normalizeCarData(legacy[carName], carName);
+                    await writeStorageJson(carStorageKey(carName), result[carName]);
+                    foundAny = true;
+                }
+            }
+            catch { }
+        }));
+        return foundAny ? result : initialCarData();
+    }
+    catch {
+        return initialCarData();
+    }
+}
+async function loadSingleCar(carName) {
+    try {
+        const car = await readStorageJson(carStorageKey(carName));
+        if (car)
+            return normalizeCarData(car, carName);
+        const legacy = await readStorageJson(STORAGE_KEY);
+        if (legacy === null || legacy === void 0 ? void 0 : legacy[carName])
+            return normalizeCarData(legacy[carName], carName);
+    }
+    catch { }
+    return null;
+}
+const carWriteQueues = new Map();
+async function acquireCarLock(carName, owner, maxWaitMs = 6000) {
+    const lockKey = carLockKey(carName);
+    const started = Date.now();
+    while (Date.now() - started < maxWaitMs) {
+        try {
+            const existing = await readStorageJson(lockKey);
+            const now = Date.now();
+            if (!existing || existing.expiresAt <= now || existing.owner === owner) {
+                const claim = { owner, expiresAt: now + 2500 };
+                await writeStorageJson(lockKey, claim);
+                await sleep(90 + Math.random() * 70);
+                const check1 = await readStorageJson(lockKey);
+                if ((check1 === null || check1 === void 0 ? void 0 : check1.owner) !== owner) {
+                    await sleep(40 + Math.random() * 80);
+                    continue;
+                }
+                await sleep(90 + Math.random() * 70);
+                const check2 = await readStorageJson(lockKey);
+                if ((check2 === null || check2 === void 0 ? void 0 : check2.owner) === owner)
+                    return true;
+            }
+        }
+        catch { }
+        await sleep(60 + Math.random() * 100);
+    }
+    return false;
+}
+async function releaseCarLock(carName, owner) {
+    try {
+        const current = await readStorageJson(carLockKey(carName));
+        if ((current === null || current === void 0 ? void 0 : current.owner) === owner) {
+            await writeStorageJson(carLockKey(carName), { owner: null, expiresAt: 0 }, 2);
+        }
+    }
+    catch { }
+}
+async function commitCarMutation(carName, updater) {
+    const owner = makeId("lock");
+    const mutationId = makeId("mut");
+    const locked = await acquireCarLock(carName, owner);
+    if (!locked) {
+        console.error(`PITWALL: timed out waiting to save ${carName}`);
+        return null;
+    }
+    try {
+        const remote = normalizeCarData(await readStorageJson(carStorageKey(carName)), carName);
+        const next = normalizeCarData(updater(remote), carName);
+        next._revision = mutationId;
+        const ok = await writeStorageJson(carStorageKey(carName), next);
+        if (!ok)
+            return null;
+        const verify = await readStorageJson(carStorageKey(carName));
+        if ((verify === null || verify === void 0 ? void 0 : verify._revision) !== mutationId) {
+            console.error(`PITWALL: verification failed for ${carName}`);
+            return null;
+        }
+        return normalizeCarData(verify, carName);
+    }
+    catch (e) {
+        console.error(`PITWALL: mutation failed for ${carName}`, e);
+        return null;
+    }
+    finally {
+        await releaseCarLock(carName, owner);
+    }
+}
+function queueCarMutation(carName, updater) {
+    const previous = carWriteQueues.get(carName) || Promise.resolve();
+    const next = previous.catch(() => { }).then(() => commitCarMutation(carName, updater));
+    carWriteQueues.set(carName, next);
+    next.finally(() => { if (carWriteQueues.get(carName) === next)
+        carWriteQueues.delete(carName); });
+    return next;
+}
+function queueCarWrite(carName, car) {
+    return queueCarMutation(carName, () => normalizeCarData(car, carName)).then(Boolean);
+}
+async function saveData(data) {
+    const results = await Promise.all(Object.entries(data || {}).map(([carName, car]) => queueCarWrite(carName, normalizeCarData(car, carName))));
+    return results.every(Boolean);
+}
+async function loadUsers() {
+    const users = {};
+    try {
+        const legacy = await readStorageJson(USERS_KEY);
+        if (legacy && typeof legacy === "object")
+            Object.assign(users, legacy);
+    }
+    catch { }
+    await Promise.all(DEFAULT_CARS.map(async (car) => {
+        try {
+            const presence = await readStorageJson(userCarKey(car));
+            if (presence === null || presence === void 0 ? void 0 : presence.name)
+                users[presence.name] = { car, lastSeen: presence.lastSeen || 0 };
+        }
+        catch { }
+    }));
+    return users;
+}
+async function saveUser(name, car) {
+    try {
+        await writeStorageJson(userCarKey(car), { name, car, lastSeen: Date.now() });
+    }
+    catch (e) {
+        console.error("PITWALL user save failed", e);
+    }
+}
+async function clearUser(name, car) {
+    try {
+        const current = await readStorageJson(userCarKey(car));
+        if ((current === null || current === void 0 ? void 0 : current.name) === name)
+            await writeStorageJson(userCarKey(car), { name: null, car, lastSeen: 0 });
+    }
+    catch { }
+}
+const UI_PREFS_KEY = "pitwall-demo-ui-prefs-v1";
+function readUiPrefs() {
+    var _a;
+    try {
+        const raw = (_a = window.localStorage) === null || _a === void 0 ? void 0 : _a.getItem(UI_PREFS_KEY);
+        return raw ? JSON.parse(raw) : {};
+    }
+    catch {
+        return {};
+    }
+}
+function writeUiPrefs(prefs) {
+    var _a;
+    try {
+        (_a = window.localStorage) === null || _a === void 0 ? void 0 : _a.setItem(UI_PREFS_KEY, JSON.stringify(prefs));
+    }
+    catch { }
+}
+function msToDisplay(ms) {
+    const m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000), cs = Math.floor((ms % 1000) / 10);
+    return `${m}:${String(s).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
+}
+function msToLabel(ms) {
+    const m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000), cs = Math.floor((ms % 1000) / 10);
+    return `${m}:${String(s).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
+}
+function msToSec(ms) { return +(ms / 1000).toFixed(3); }
+function distVal(v, metric) { return metric ? +(v * 1.60934).toFixed(2) : +v.toFixed(2); }
+function distUnit(metric) { return metric ? "km" : "mi"; }
+function fuelVal(v, metric) { return metric ? +(v * 3.78541).toFixed(2) : +v.toFixed(2); }
+function fuelUnit(metric) { return metric ? "L" : "gal"; }
+function circuitDist(miles, metric) { return metric ? +(miles * 1.60934).toFixed(3) : miles; }
+function timeAgo(ts) {
+    if (!ts)
+        return "—";
+    const s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 10)
+        return "just now";
+    if (s < 60)
+        return `${s}s ago`;
+    if (s < 3600)
+        return `${Math.floor(s / 60)}m ago`;
+    return `${Math.floor(s / 3600)}h ago`;
+}
+function bestLap(car) {
+    var _a;
+    if (!((_a = car.laps) === null || _a === void 0 ? void 0 : _a.length))
+        return "—";
+    return msToLabel(Math.min(...car.laps.map(l => l.time)));
+}
+function nowLabel() { return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }); }
+function dateLabel() { return new Date().toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" }); }
+const timerStorageKey = (car, user) => `pitwall-demo-timer-${encodeURIComponent(`${car}|${user}`)}`;
+function readTimerState(car, user) {
+    var _a;
+    try {
+        const raw = (_a = window.localStorage) === null || _a === void 0 ? void 0 : _a.getItem(timerStorageKey(car, user));
+        return raw ? JSON.parse(raw) : null;
+    }
+    catch {
+        return null;
+    }
+}
+function writeTimerState(car, user, state) {
+    var _a, _b;
+    try {
+        if (state)
+            (_a = window.localStorage) === null || _a === void 0 ? void 0 : _a.setItem(timerStorageKey(car, user), JSON.stringify(state));
+        else
+            (_b = window.localStorage) === null || _b === void 0 ? void 0 : _b.removeItem(timerStorageKey(car, user));
+    }
+    catch { }
+}
+const G = `
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#111214;
+  --s1:#191a1d;--s2:#1e2022;--s3:#242628;--s4:#2a2c2f;
+  --b:#2a2c2f;--b2:#343638;--b3:#3e4042;
+  --acc:#f5c518;--acc-dim:rgba(245,197,24,.12);--acc-glow:rgba(245,197,24,.25);
+  --red:#e83820;--red-dim:rgba(232,56,32,.12);
+  --grn:#00c86e;--grn-dim:rgba(0,200,110,.1);--grn-glow:rgba(0,200,110,.2);
+  --org:#f07818;--org-dim:rgba(240,120,24,.1);
+  --blu:#0090e0;--blu-dim:rgba(0,144,224,.1);
+  --txt:#eeeef4;--txt2:#a8a8b8;--txt3:#606070;--mut:#a8a8b8;--mut2:#606070;--acc2:#f5c518;
+  --radius:6px;--radius-sm:4px;
+}
+body{background:var(--bg);color:var(--txt);font-family:'Inter',sans-serif;min-height:100vh;overflow-x:hidden;font-weight:400;-webkit-font-smoothing:antialiased}
+
+/* ════════════════════════════════════════
+   LOGIN
+════════════════════════════════════════ */
+.login-bg{
+  min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;
+  background:
+    radial-gradient(ellipse 120% 60% at 50% -5%,rgba(245,197,24,.06) 0%,transparent 60%),
+    var(--bg)
+}
+.logo{
+  font-family:'Bebas Neue',sans-serif;font-size:clamp(72px,18vw,128px);
+  letter-spacing:12px;color:var(--acc);line-height:1;
+  text-shadow:0 2px 0 rgba(0,0,0,.5)
+}
+.logo-sub{
+  font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:7px;
+  color:var(--txt3);text-transform:uppercase;margin-bottom:40px;margin-top:4px
+}
+.card{
+  background:var(--s1);border:1px solid var(--b2);border-radius:var(--radius);
+  padding:28px;width:100%;max-width:360px;
+  box-shadow:0 0 0 1px rgba(255,255,255,.03),0 32px 64px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.05)
+}
+.card h2{
+  font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:4px;
+  text-transform:uppercase;color:var(--txt3);margin-bottom:22px;
+  padding-bottom:14px;border-bottom:1px solid var(--b)
+}
+
+/* ════════════════════════════════════════
+   FORMS
+════════════════════════════════════════ */
+.f{margin-bottom:16px}
+.f label{
+  display:block;font-size:9px;letter-spacing:3px;text-transform:uppercase;
+  color:var(--txt3);margin-bottom:7px;font-family:'JetBrains Mono',monospace
+}
+.f input,.f select{
+  width:100%;background:var(--bg);border:1px solid var(--b2);color:var(--txt);
+  padding:11px 14px;font-family:'JetBrains Mono',monospace;font-size:13px;
+  border-radius:var(--radius-sm);outline:none;transition:border-color .15s,box-shadow .15s;
+  -webkit-appearance:none
+}
+.f input:focus,.f select:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-dim)}
+.f select option{background:var(--s2)}
+
+/* ════════════════════════════════════════
+   BUTTONS
+════════════════════════════════════════ */
+.btn{
+  width:100%;padding:13px 16px;background:var(--acc);color:#1a1a1a;border:none;
+  font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:3px;font-weight:700;
+  cursor:pointer;border-radius:var(--radius-sm);transition:all .15s;
+  display:block;text-align:center;text-transform:uppercase
+}
+.btn:hover{background:#ffd42a;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.btn:active{transform:translateY(1px);box-shadow:none}
+.btn-out{background:transparent;color:var(--acc);border:1px solid rgba(245,197,24,.35);margin-top:10px}
+.btn-out:hover{background:var(--acc-dim);border-color:var(--acc);box-shadow:none}
+.btn-red{background:var(--red);color:#fff}
+.btn-red:hover{background:#f04830;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.btn-grn{background:var(--grn);color:#1a1a1a}
+.btn-grn:hover{background:#00e07a;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.btn-org{background:var(--org);color:#1a1a1a}
+.btn-org:hover{background:#ff8a28}
+.btn-ghost{background:transparent;color:var(--txt2);border:1px solid var(--b2);margin-top:10px}
+.btn-ghost:hover{border-color:var(--b3);color:var(--txt);background:var(--s3)}
+.btn-sm{width:auto;padding:7px 16px;font-size:10px;letter-spacing:2px}
+
+/* ════════════════════════════════════════
+   HEADER
+════════════════════════════════════════ */
+.hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px;height:54px;background:var(--s1);
+  border-bottom:1px solid var(--b);position:sticky;top:0;z-index:200;
+  box-shadow:0 1px 0 rgba(255,255,255,.03),0 4px 24px rgba(0,0,0,.5)
+}
+.hdr-title{
+  font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:6px;
+  color:var(--acc);
+}
+.hdr-right{display:flex;align-items:center;gap:12px}
+.exit-btn{
+  background:none;border:1px solid var(--b2);color:var(--txt3);cursor:pointer;
+  font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:2px;
+  padding:6px 12px;border-radius:var(--radius-sm);text-transform:uppercase;transition:all .15s
+}
+.exit-btn:hover{border-color:var(--red);color:var(--red)}
+
+/* ════════════════════════════════════════
+   TABS — pill style
+════════════════════════════════════════ */
+.tabs{
+  display:flex;background:var(--s2);border-bottom:1px solid var(--b);
+  overflow-x:auto;scrollbar-width:none;padding:10px 14px;gap:6px
+}
+.tabs::-webkit-scrollbar{display:none}
+.tab{
+  flex:none;padding:7px 16px;text-align:center;font-family:'JetBrains Mono',monospace;
+  font-size:10px;letter-spacing:2px;color:var(--txt3);cursor:pointer;
+  border-radius:var(--radius-sm);transition:all .15s;white-space:nowrap;
+  text-transform:uppercase;border:1px solid transparent;font-weight:500
+}
+.tab.on{color:#000;background:var(--acc);font-weight:700;}
+.tab:hover:not(.on){color:var(--txt);background:var(--s4);border-color:var(--b2)}
+
+/* ════════════════════════════════════════
+   CONTENT SECTIONS
+════════════════════════════════════════ */
+.wrap{padding:16px;max-width:540px;margin:0 auto}
+.sec{
+  background:var(--s1);border:1px solid var(--b);border-radius:var(--radius);
+  margin-bottom:14px;overflow:hidden;
+  box-shadow:0 2px 8px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.03)
+}
+.sec-title{
+  padding:11px 18px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:3px;
+  text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--b);
+  background:linear-gradient(180deg,var(--s2) 0%,var(--s1) 100%);
+  display:flex;align-items:center;justify-content:space-between
+}
+.sec-title::before{
+  content:"";width:3px;height:12px;background:var(--acc);margin-right:12px;
+  opacity:.7;flex-shrink:0;border-radius:2px
+}
+.sec-body{padding:18px}
+
+/* ════════════════════════════════════════
+   STOPWATCH
+════════════════════════════════════════ */
+.sw-display{
+  text-align:center;padding:32px 16px 16px;
+  background:radial-gradient(ellipse 70% 50% at 50% 110%,rgba(245,197,24,.05),transparent)
+}
+.sw-time{
+  font-family:'JetBrains Mono',monospace;font-size:clamp(48px,12vw,72px);color:var(--acc);
+  letter-spacing:2px;line-height:1;font-weight:700;
+  
+}
+.sw-lap-count{
+  font-size:9px;color:var(--txt3);letter-spacing:5px;font-family:'JetBrains Mono',monospace;
+  margin-top:10px;text-transform:uppercase
+}
+.sw-btns{display:flex;gap:10px;padding:0 18px 18px}
+.sw-btns .btn{flex:1}
+
+/* ════════════════════════════════════════
+   LAP LIST
+════════════════════════════════════════ */
+.lap-scroll{max-height:220px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--b2) transparent}
+.lap-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:8px 0;border-bottom:1px solid var(--b);
+  font-family:'JetBrains Mono',monospace;font-size:12px
+}
+.lap-row:last-child{border-bottom:none}
+.lap-num{color:var(--txt3);font-size:10px;min-width:36px;font-weight:500}
+.lap-best{color:var(--grn);font-weight:700}
+.lap-time{color:var(--txt);font-weight:500}
+.lap-meta{color:var(--txt3);font-size:10px;text-align:right;line-height:1.6}
+
+/* ════════════════════════════════════════
+   STATS
+════════════════════════════════════════ */
+.stat-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 0;border-bottom:1px solid var(--b)
+}
+.stat-row:last-child{border-bottom:none}
+.stat-lbl{font-size:11px;color:var(--txt3);font-family:'JetBrains Mono',monospace;letter-spacing:1px;font-weight:500}
+.stat-val{font-family:'JetBrains Mono',monospace;font-size:16px;color:var(--txt);font-weight:600}
+.stat-acc{color:var(--acc)}
+.tire-tag{
+  display:inline-flex;align-items:center;gap:6px;padding:5px 12px;
+  border-radius:var(--radius-sm);background:var(--org-dim);
+  border:1px solid rgba(240,120,24,.2);color:var(--org);
+  font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:1px;font-weight:600
+}
+
+/* ════════════════════════════════════════
+   CAR BANNER — field view
+════════════════════════════════════════ */
+.car-banner{
+  background:linear-gradient(135deg,var(--s2) 0%,rgba(14,14,8,.9) 100%);
+  border:1px solid rgba(245,197,24,.2);border-radius:var(--radius);
+  padding:18px 22px;margin-bottom:16px;
+  display:flex;align-items:center;justify-content:space-between;
+  box-shadow:inset 0 1px 0 rgba(245,197,24,.06)
+}
+.car-banner-name{
+  font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:4px;color:var(--acc);
+  line-height:1
+}
+.car-banner-circuit{
+  font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--txt3);
+  letter-spacing:2px;margin-top:4px;text-transform:uppercase
+}
+
+/* ════════════════════════════════════════
+   MASTER GRID
+════════════════════════════════════════ */
+.master-wrap{padding:16px}
+.master-grid{display:grid;grid-template-columns:1fr;gap:14px}
+@media(min-width:600px){.master-grid{grid-template-columns:1fr 1fr}}
+@media(min-width:900px){.master-grid{grid-template-columns:1fr 1fr 1fr}}
+
+/* ════════════════════════════════════════
+   CAR CARDS — dashboard
+════════════════════════════════════════ */
+.car-card{
+  background:var(--s1);border:1px solid var(--b);border-radius:var(--radius);
+  overflow:hidden;transition:border-color .2s,box-shadow .2s,transform .1s;cursor:pointer;
+  box-shadow:0 4px 16px rgba(0,0,0,.4)
+}
+.car-card:hover{border-color:var(--b3);box-shadow:0 8px 32px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.04)}
+.car-card:active{transform:scale(0.98)}
+.car-card.live{border-color:rgba(0,200,110,.3);box-shadow:0 4px 16px rgba(0,0,0,.4),}
+.car-card.live:hover{border-color:rgba(0,200,110,.5);box-shadow:0 8px 32px rgba(0,0,0,.5),}
+.car-card-hdr{
+  display:flex;align-items:center;justify-content:space-between;padding:14px 18px;
+  background:linear-gradient(180deg,var(--s3) 0%,var(--s1) 100%);border-bottom:1px solid var(--b)
+}
+.car-card.live .car-card-hdr{background:linear-gradient(180deg,rgba(0,200,110,.06) 0%,var(--s1) 100%)}
+.car-card-name{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:3px;color:var(--acc)}
+.car-card-body{padding:16px 18px}
+.mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.mini-stat-lbl{
+  font-size:9px;letter-spacing:2px;color:var(--txt3);font-family:'JetBrains Mono',monospace;
+  text-transform:uppercase;margin-bottom:3px;font-weight:500
+}
+.mini-stat-val{font-family:'JetBrains Mono',monospace;font-size:20px;color:var(--txt);font-weight:600;line-height:1}
+
+/* ════════════════════════════════════════
+   SUMMARY BAR
+════════════════════════════════════════ */
+.summary-bar{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--b);
+  border:1px solid var(--b);border-radius:var(--radius);overflow:hidden;margin-bottom:16px;
+  box-shadow:0 4px 20px rgba(0,0,0,.35)
+}
+.sum-cell{background:var(--s1);padding:16px 8px;text-align:center;position:relative}
+.sum-cell::before{
+  content:"";position:absolute;top:0;left:0;right:0;height:2px;
+  background:var(--acc);opacity:.1
+}
+.sum-val{
+  font-family:'Bebas Neue',sans-serif;font-size:30px;color:var(--acc);line-height:1;
+  
+}
+.sum-lbl{
+  font-size:8px;letter-spacing:2px;color:var(--txt3);
+  font-family:'JetBrains Mono',monospace;text-transform:uppercase;margin-top:5px;font-weight:500
+}
+
+/* ════════════════════════════════════════
+   CHARTS
+════════════════════════════════════════ */
+.chart-wrap{padding:4px 4px 10px}
+
+/* ════════════════════════════════════════
+   BADGES
+════════════════════════════════════════ */
+.badge{
+  display:inline-flex;align-items:center;padding:4px 9px;border-radius:var(--radius-sm);
+  font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;
+  text-transform:uppercase;font-weight:600
+}
+.badge-grn{background:var(--grn-dim);color:var(--grn);border:1px solid rgba(0,200,110,.25)}
+.badge-gray{background:rgba(80,80,96,.08);color:var(--txt3);border:1px solid var(--b2)}
+
+/* ════════════════════════════════════════
+   LIVE INDICATORS
+════════════════════════════════════════ */
+.pulse{
+  display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--grn);
+  animation:pulse 1.8s ease-in-out infinite;margin-right:7px;
+  
+}
+.live-dot{
+  display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--grn);
+  animation:pulse 1.8s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.25;transform:scale(.8)}}
+
+/* ════════════════════════════════════════
+   LAYOUT UTILITIES
+════════════════════════════════════════ */
+.inline-row{display:flex;gap:10px;align-items:flex-end}
+.inline-row .f{flex:1;margin:0}
+.circuit-pill{
+  display:inline-flex;align-items:center;gap:7px;padding:5px 12px;border-radius:var(--radius-sm);
+  background:var(--blu-dim);border:1px solid rgba(0,144,224,.2);color:var(--blu);
+  font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1px;font-weight:500
+}
+.user-pill{
+  font-family:'JetBrains Mono',monospace;font-size:10px;padding:4px 11px;border-radius:20px;
+  background:var(--grn-dim);color:var(--grn);border:1px solid rgba(0,200,110,.2);font-weight:500
+}
+.users-row{display:flex;flex-wrap:wrap;gap:8px;padding:14px 18px;border-top:1px solid var(--b)}
+.time-ago{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--txt3);font-weight:500}
+
+/* ════════════════════════════════════════
+   TOASTS + ALARMS
+════════════════════════════════════════ */
+.toast{
+  background:var(--grn-dim);border:1px solid rgba(0,200,110,.25);border-radius:var(--radius-sm);
+  padding:11px 18px;margin-bottom:14px;font-family:'JetBrains Mono',monospace;font-size:11px;
+  color:var(--grn);letter-spacing:1px;border-left:3px solid var(--grn);font-weight:600
+}
+.tire-alarm{
+  background:rgba(232,56,32,.12);border:1px solid rgba(232,56,32,.4);border-radius:var(--radius-sm);
+  padding:12px 18px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;
+  animation:alarm-flash 1s ease-in-out infinite;border-left:4px solid var(--red)
+}
+.tire-warn{
+  background:rgba(240,120,24,.1);border:1px solid rgba(240,120,24,.35);border-radius:var(--radius-sm);
+  padding:12px 18px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;
+  border-left:4px solid var(--org)
+}
+.tire-alarm-txt{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:2px;font-weight:700;text-transform:uppercase}
+.tire-alarm-val{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:2px}
+.fuel-alarm{
+  background:var(--red-dim);border:1px solid rgba(232,56,32,.4);border-radius:var(--radius-sm);
+  padding:14px 20px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;
+  animation:alarm-flash 1s ease-in-out infinite;border-left:4px solid var(--red)
+}
+@keyframes alarm-flash{0%,100%{background:var(--red-dim)}50%{background:rgba(232,56,32,.2)}}
+.fuel-alarm-txt{
+  font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--red);
+  letter-spacing:3px;font-weight:700;text-transform:uppercase
+}
+.fuel-alarm-val{
+  font-family:'Bebas Neue',sans-serif;font-size:32px;color:var(--red);
+  letter-spacing:2px;
+}
+
+/* ════════════════════════════════════════
+   FUEL
+════════════════════════════════════════ */
+.fuel-mini{
+  display:flex;align-items:center;justify-content:space-between;
+  background:var(--s2);border-radius:var(--radius-sm);padding:10px 15px;
+  margin-bottom:6px;border:1px solid var(--b)
+}
+.fuel-mini-lbl{
+  font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--txt3);
+  letter-spacing:2px;text-transform:uppercase;font-weight:500
+}
+.fuel-mini-val{font-family:'JetBrains Mono',monospace;font-size:15px;color:var(--txt);font-weight:600}
+.fuel-bar-track{height:8px;background:var(--b2);border-radius:4px;overflow:hidden;margin-top:8px}
+.fuel-bar-fill{height:100%;border-radius:4px;transition:width .5s ease}
+
+/* ════════════════════════════════════════
+   DETAIL VIEW
+════════════════════════════════════════ */
+.detail-hdr{
+  display:flex;align-items:center;gap:16px;padding:16px 20px;
+  background:linear-gradient(180deg,var(--s2) 0%,var(--s1) 100%);border-bottom:1px solid var(--b)
+}
+.detail-back{
+  background:none;border:1px solid var(--b2);color:var(--txt3);cursor:pointer;
+  font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:2px;padding:7px 14px;
+  border-radius:var(--radius-sm);text-transform:uppercase;transition:all .15s;flex-shrink:0;font-weight:500
+}
+.detail-back:hover{border-color:var(--acc);color:var(--acc)}
+.detail-car-name{
+  font-family:'Bebas Neue',sans-serif;font-size:30px;letter-spacing:4px;color:var(--acc);
+  ;line-height:1}
+.detail-tabs{
+  display:flex;background:var(--s2);border-bottom:1px solid var(--b);
+  overflow-x:auto;scrollbar-width:none;padding:10px 14px;gap:6px
+}
+.detail-tabs::-webkit-scrollbar{display:none}
+.detail-tab{
+  flex:none;padding:7px 14px;text-align:center;font-family:'JetBrains Mono',monospace;
+  font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--txt3);cursor:pointer;
+  border-radius:var(--radius-sm);transition:all .15s;white-space:nowrap;
+  border:1px solid transparent;font-weight:500
+}
+.detail-tab.on{color:#000;background:var(--acc);font-weight:700;}
+.detail-tab:hover:not(.on){color:var(--txt);background:var(--s4);border-color:var(--b2)}
+
+/* ════════════════════════════════════════
+   NOTES + TASKS
+════════════════════════════════════════ */
+.notes-area{
+  width:100%;background:var(--bg);border:1px solid var(--b2);color:var(--txt);padding:14px;
+  font-family:'Inter',sans-serif;font-size:14px;line-height:1.65;border-radius:var(--radius-sm);
+  outline:none;resize:none;transition:border-color .15s,box-shadow .15s
+}
+.notes-area:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-dim)}
+.note-entry{padding:14px 0;border-bottom:1px solid var(--b)}
+.note-entry:last-child{border-bottom:none}
+.note-meta{
+  font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--txt3);
+  letter-spacing:2px;text-transform:uppercase;margin-bottom:7px;
+  display:flex;justify-content:space-between;font-weight:500
+}
+.note-text{font-size:14px;color:var(--txt2);line-height:1.6;white-space:pre-wrap}
+.task-row{display:flex;align-items:flex-start;gap:14px;padding:12px 0;border-bottom:1px solid var(--b)}
+.task-row:last-child{border-bottom:none}
+.task-check{
+  width:22px;height:22px;border-radius:5px;border:2px solid var(--b3);background:var(--bg);
+  cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+  margin-top:1px;transition:all .15s
+}
+.task-check:hover{border-color:var(--grn)}
+.task-check.done{background:var(--grn);border-color:var(--grn);}
+.task-body{flex:1}
+.task-text{font-size:14px;color:var(--txt);line-height:1.4;font-weight:500}
+.task-text.done{text-decoration:line-through;color:var(--txt3)}
+.task-stamp{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--grn);letter-spacing:1px;margin-top:5px;font-weight:500}
+.task-priority{
+  display:inline-block;padding:2px 8px;border-radius:3px;
+  font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1px;
+  margin-bottom:6px;font-weight:700;text-transform:uppercase
+}
+.pri-high{background:var(--red-dim);color:var(--red);border:1px solid rgba(232,56,32,.25)}
+.pri-med{background:var(--org-dim);color:var(--org);border:1px solid rgba(240,120,24,.25)}
+.pri-low{background:rgba(80,80,96,.1);color:var(--txt3);border:1px solid var(--b2)}
+.section-divider{display:flex;align-items:center;gap:12px;margin:18px 0 14px}
+.section-divider span{
+  font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:3px;
+  text-transform:uppercase;color:var(--txt3);white-space:nowrap;font-weight:500
+}
+.section-divider::before,.section-divider::after{content:"";flex:1;height:1px;background:var(--b2)}
+
+/* ════════════════════════════════════════
+   ROLE SELECTOR
+════════════════════════════════════════ */
+.role-btn{
+  width:100%;padding:18px 20px;background:var(--s2);border:1px solid var(--b2);color:var(--txt);
+  font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:3px;font-weight:700;
+  cursor:pointer;border-radius:var(--radius-sm);text-align:left;
+  display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;
+  transition:all .15s;text-transform:uppercase;position:relative;overflow:hidden
+}
+.role-btn::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+  background:var(--acc);opacity:0;transition:opacity .15s
+}
+.role-btn:hover{border-color:rgba(245,197,24,.25);background:var(--s3)}
+.role-btn:hover::before{opacity:1}
+.role-icon{font-size:10px;color:var(--txt3);letter-spacing:2px}
+.pin-input{
+  width:100%;background:var(--bg);border:1px solid var(--b2);color:var(--acc);
+  padding:16px;font-family:'JetBrains Mono',monospace;font-size:28px;letter-spacing:12px;
+  border-radius:var(--radius-sm);outline:none;text-align:center;
+  transition:all .15s;margin-bottom:14px;font-weight:700
+}
+.pin-input:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-dim)}
+.pin-error{
+  font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--red);
+  text-align:center;margin-bottom:12px;letter-spacing:3px;text-transform:uppercase;font-weight:600
+}
+.badge-overview{background:var(--blu-dim);color:var(--blu);border:1px solid rgba(0,144,224,.25)}
+.readonly-overlay{pointer-events:none;opacity:0.5}
+.sim-banner{
+  background:linear-gradient(90deg,rgba(0,144,224,.08) 0%,rgba(0,144,224,.03) 100%);
+  border:1px solid rgba(0,144,224,.25);border-radius:var(--radius-sm);
+  padding:12px 18px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;
+  border-left:3px solid var(--blu)
+}
+.sim-banner-txt{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--blu);letter-spacing:2px;text-transform:uppercase;font-weight:600}
+.sim-banner-sub{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--txt3);letter-spacing:1px;margin-top:3px}
+`;
+function AppContent() {
+    const [screen, setScreen] = useState("login");
+    const [userName, setUserName] = useState("");
+    const [selectedCar, setSelectedCar] = useState(DEFAULT_CARS[0]);
+    const [circuit, setCircuit] = useState(() => {
+        const prefs = readUiPrefs();
+        return CIRCUITS.find(c => c.name === prefs.circuitName) || CIRCUITS[0];
+    });
+    const [nameInput, setNameInput] = useState("");
+    const [carInput, setCarInput] = useState(DEFAULT_CARS[0]);
+    const [data, setData] = useState(null);
+    const [users, setUsers] = useState({});
+    const [fieldTab, setFieldTab] = useState("overview");
+    const [masterTab, setMasterTab] = useState("cars");
+    const [metric, setMetric] = useState(() => !!readUiPrefs().metric);
+    const [config, setConfig] = useState(DEFAULT_CONFIG);
+    const [loading, setLoading] = useState(true);
+    const pollRef = useRef(null);
+    const dataRef = useRef(null);
+    const configRef = useRef(DEFAULT_CONFIG);
+    const lastWriteRef = useRef(0);
+    const [simRunning, setSimRunning] = useState(false);
+    const simTimerRef = useRef(null);
+    const simTickRef = useRef(0);
+    const seedDemoFleet = useCallback(async () => {
+        const active = (configRef.current.activeCars || DEFAULT_CARS).slice(0, 5);
+        const baseTimes = [93800, 94400, 94950, 95600, 96250];
+        const fuelRates = [0.95, 0.92, 0.98, 0.90, 1.01];
+        await Promise.all(active.map(async (carName, idx) => {
+            const fresh = {
+                ...normalizeCarData(null, carName),
+                fuelCapacity: 21,
+                fuelPerLap: fuelRates[idx] || 0.95,
+                fuelUsed: 0,
+                currentTireSet: "Set A",
+                tireSets: { "Set A": 0 },
+                tireSetLabels: { "Set A": "Set A" },
+                status: "Racing",
+                lastUpdate: Date.now(),
+                notes: idx === 0 ? [{
+                        id: makeId("note"),
+                        text: "Demo session started — simulated race traffic active.",
+                        by: "Simulation",
+                        timeOfDay: nowLabel(),
+                        date: dateLabel()
+                    }] : [],
+                tasks: idx === 1 ? [{
+                        id: makeId("task"),
+                        text: "Review tire trend after the next run",
+                        priority: "med",
+                        done: false,
+                        doneBy: null,
+                        doneTime: null,
+                        createdBy: "Simulation"
+                    }] : [],
+                _simBaseLap: baseTimes[idx] || 95500,
+            };
+            await queueCarWrite(carName, fresh);
+        }));
+        const d = await loadData();
+        dataRef.current = d;
+        setData(d);
+    }, []);
+    const runSimulationTick = useCallback(async () => {
+        const active = (configRef.current.activeCars || DEFAULT_CARS).slice(0, 5);
+        if (!active.length)
+            return;
+        const circuitMiles = (circuit === null || circuit === void 0 ? void 0 : circuit.miles) || 2.54;
+        simTickRef.current += 1;
+        const tick = simTickRef.current;
+        const chosen = active.filter((_, idx) => ((tick + idx) % 2 === 0) || Math.random() < 0.28);
+        await Promise.all(chosen.map(async (carName, idx) => {
+            await queueCarMutation(carName, car => {
+                var _a;
+                const laps = Array.isArray(car.laps) ? [...car.laps] : [];
+                const lapNo = laps.length + 1;
+                const base = car._simBaseLap || (93800 + active.indexOf(carName) * 650);
+                const tireSet = car.currentTireSet || "Set A";
+                const lapMs = Math.max(80000, Math.round(base + (Math.random() - 0.5) * 1800));
+                const tireMiles = (((_a = car.tireSets) === null || _a === void 0 ? void 0 : _a[tireSet]) || 0) + circuitMiles;
+                const fuelPerLap = car.fuelPerLap || 0.95;
+                let nextTireSet = tireSet;
+                let tireSets = { ...(car.tireSets || { "Set A": 0 }), [tireSet]: tireMiles };
+                let tireLabels = { ...(car.tireSetLabels || { "Set A": "Set A" }) };
+                if (lapNo > 1 && lapNo % 9 === 0) {
+                    const existing = Object.keys(tireSets);
+                    const nextLetter = String.fromCharCode(65 + Math.min(existing.length, 25));
+                    nextTireSet = `Set ${nextLetter}`;
+                    if (!tireSets[nextTireSet])
+                        tireSets[nextTireSet] = 0;
+                    if (!tireLabels[nextTireSet])
+                        tireLabels[nextTireSet] = nextTireSet;
+                }
+                laps.push({
+                    id: makeId("lap"),
+                    time: lapMs,
+                    at: Date.now(),
+                    by: "Simulation",
+                    date: dateLabel(),
+                    timeOfDay: nowLabel(),
+                    lap: lapNo,
+                    tireMilesOnSet: tireMiles,
+                    fuelPerLap,
+                });
+                return {
+                    ...car,
+                    laps,
+                    totalMileage: (car.totalMileage || 0) + circuitMiles,
+                    fuelUsed: Math.min(car.fuelCapacity || 21, (car.fuelUsed || 0) + fuelPerLap),
+                    currentTireSet: nextTireSet,
+                    tireSets,
+                    tireSetLabels: tireLabels,
+                    status: "Racing",
+                    lastUpdate: Date.now(),
+                    _simBaseLap: base,
+                };
+            });
+            await writeStorageJson(userCarKey(carName), {
+                name: `Demo Crew ${active.indexOf(carName) + 1}`,
+                car: carName,
+                lastSeen: Date.now()
+            });
+        }));
+        if (tick % 5 === 0 && active[0]) {
+            await queueCarMutation(active[0], car => ({
+                ...car,
+                notes: [...(car.notes || []), {
+                        id: makeId("note"),
+                        text: tick % 10 === 0 ? "Driver reports balance improving as fuel burns off." : "Traffic affected the last lap.",
+                        by: "Simulation",
+                        timeOfDay: nowLabel(),
+                        date: dateLabel()
+                    }].slice(-12)
+            }));
+        }
+        const [d, u] = await Promise.all([loadData(), loadUsers()]);
+        dataRef.current = d;
+        setData(d);
+        setUsers(u);
+    }, [circuit]);
+    const startSimulation = useCallback(async () => {
+        if (simTimerRef.current)
+            return;
+        await seedDemoFleet();
+        setSimRunning(true);
+        await runSimulationTick();
+        simTimerRef.current = setInterval(() => { runSimulationTick(); }, 3500);
+    }, [seedDemoFleet, runSimulationTick]);
+    const stopSimulation = useCallback(() => {
+        if (simTimerRef.current)
+            clearInterval(simTimerRef.current);
+        simTimerRef.current = null;
+        setSimRunning(false);
+    }, []);
+    const resetDemoData = useCallback(async () => {
+        stopSimulation();
+        await Promise.all(DEFAULT_CARS.map(carName => queueCarWrite(carName, normalizeCarData(null, carName))));
+        await Promise.all(DEFAULT_CARS.map(carName => writeStorageJson(userCarKey(carName), { name: null, car: carName, lastSeen: 0 })));
+        const d = await loadData();
+        dataRef.current = d;
+        setData(d);
+        setUsers({});
+    }, [stopSimulation]);
+    useEffect(() => () => {
+        if (simTimerRef.current)
+            clearInterval(simTimerRef.current);
+    }, []);
+    useEffect(() => {
+        (async () => {
+            const d = await loadData();
+            const u = await loadUsers();
+            const cfg = await loadConfig();
+            dataRef.current = d;
+            configRef.current = cfg;
+            setData(d);
+            setUsers(u);
+            setConfig(cfg);
+            setLoading(false);
+        })();
+    }, []);
+    useEffect(() => { dataRef.current = data; }, [data]);
+    useEffect(() => {
+        writeUiPrefs({ metric, circuitName: circuit.name });
+    }, [metric, circuit]);
+    useEffect(() => {
+        if (screen === "overview" || screen === "lead" || screen === "field") {
+            pollRef.current = setInterval(async () => {
+                if (screen === "field") {
+                    if (Date.now() - lastWriteRef.current > 1500 && selectedCar) {
+                        const car = await loadSingleCar(selectedCar);
+                        if (car) {
+                            const merged = { ...(dataRef.current || initialCarData()), [selectedCar]: car };
+                            dataRef.current = merged;
+                            setData(merged);
+                        }
+                    }
+                }
+                else {
+                    const [u, d] = await Promise.all([loadUsers(), loadData()]);
+                    setUsers(u);
+                    if (Date.now() - lastWriteRef.current > 1500) {
+                        dataRef.current = d;
+                        setData(d);
+                    }
+                }
+            }, 2000);
+        }
+        return () => clearInterval(pollRef.current);
+    }, [screen, selectedCar]);
+    const updateConfig = async (updater) => {
+        const updated = updater(configRef.current);
+        configRef.current = updated;
+        lastWriteRef.current = Date.now();
+        setConfig(updated);
+        await saveConfig(updated);
+    };
+    const updateCarData = async (carName, updater) => {
+        const current = dataRef.current;
+        if (!current)
+            return false;
+        const optimisticCar = normalizeCarData(updater(normalizeCarData(current[carName], carName)), carName);
+        const optimistic = { ...current, [carName]: optimisticCar };
+        dataRef.current = optimistic;
+        lastWriteRef.current = Date.now();
+        setData(optimistic);
+        const persistedCar = await queueCarMutation(carName, updater);
+        if (!persistedCar) {
+            console.error(`PITWALL: unable to save ${carName}`);
+            const refreshed = await loadData();
+            dataRef.current = refreshed;
+            setData(refreshed);
+            return false;
+        }
+        const reconciled = { ...dataRef.current, [carName]: persistedCar };
+        dataRef.current = reconciled;
+        setData(reconciled);
+        return true;
+    };
+    const loadDemoData = startSimulation;
+    const clearDemoData = resetDemoData;
+    const updateCar = useCallback(async (updater) => {
+        const current = dataRef.current;
+        if (!current || !selectedCar)
+            return null;
+        const optimisticCar = normalizeCarData(updater(normalizeCarData(current[selectedCar], selectedCar)), selectedCar);
+        const optimistic = { ...current, [selectedCar]: optimisticCar };
+        dataRef.current = optimistic;
+        lastWriteRef.current = Date.now();
+        setData(optimistic);
+        const persistedCar = await queueCarMutation(selectedCar, updater);
+        if (!persistedCar) {
+            const refreshed = await loadData();
+            dataRef.current = refreshed;
+            setData(refreshed);
+            return null;
+        }
+        const reconciled = { ...dataRef.current, [selectedCar]: persistedCar };
+        dataRef.current = reconciled;
+        setData(reconciled);
+        return reconciled;
+    }, [selectedCar]);
+    const handleLogin = async (role, name, car) => {
+        if (role === "lead") {
+            setUserName("LEAD");
+            setScreen("lead");
+            return;
+        }
+        if (role === "overview") {
+            setUserName("OVERVIEW");
+            setScreen("overview");
+            return;
+        }
+        if (!name.trim())
+            return;
+        if (!(config.activeCars || DEFAULT_CARS).includes(car))
+            return;
+        setUserName(name.trim());
+        setSelectedCar(car);
+        await saveUser(name.trim(), car);
+        const current = dataRef.current || await loadData();
+        const updatedCar = normalizeCarData({ ...current[car], status: "Active", lastUpdate: Date.now() }, car);
+        const updated = { ...current, [car]: updatedCar };
+        dataRef.current = updated;
+        lastWriteRef.current = Date.now();
+        setData(updated);
+        const persisted = await queueCarMutation(car, c => ({ ...c, status: "Active", lastUpdate: Date.now() }));
+        if (persisted) {
+            const reconciled = { ...dataRef.current, [car]: persisted };
+            dataRef.current = reconciled;
+            setData(reconciled);
+        }
+        setScreen("field");
+    };
+    if (loading)
+        return (React.createElement(React.Fragment, null,
+            React.createElement("style", null, G),
+            React.createElement("div", { className: "login-bg" },
+                React.createElement("div", { className: "logo" }, "PITWALL"),
+                React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 11, color: "var(--txt3)", letterSpacing: 3 } }, "LOADING\u2026"))));
+    if (screen === "login")
+        return React.createElement(Login, { onLogin: handleLogin, metric: metric, setMetric: setMetric, config: config, circuit: circuit, setCircuit: setCircuit });
+    if (screen === "lead")
+        return React.createElement(MasterView, { data: data, users: users, onLogout: () => setScreen("login"), tab: masterTab, setTab: setMasterTab, circuit: circuit, metric: metric, config: config, updateConfig: updateConfig, updateCarData: updateCarData, loadDemoData: loadDemoData, clearDemoData: clearDemoData, simRunning: simRunning, stopSimulation: stopSimulation });
+    if (screen === "overview")
+        return React.createElement(OverviewView, { data: data, users: users, onLogout: () => setScreen("login"), circuit: circuit, metric: metric, config: config, updateCarData: updateCarData, simRunning: simRunning });
+    return React.createElement(FieldView, { data: data, car: selectedCar, userName: userName, circuit: circuit, updateCar: updateCar, tab: fieldTab, setTab: setFieldTab, metric: metric, config: config, updateConfig: updateConfig, onLogout: async () => { await updateCar(c => ({ ...c, status: "Idle", lastUpdate: Date.now() })); await clearUser(userName, selectedCar); setScreen("login"); } });
+}
+function Login({ onLogin, metric, setMetric, config, circuit, setCircuit }) {
+    var _a, _b;
+    const [role, setRole] = useState(null);
+    const [name, setName] = useState("");
+    const [car, setCar] = useState((config.activeCars || DEFAULT_CARS)[0]);
+    const [pin, setPin] = useState("");
+    const [pinError, setPinError] = useState("");
+    const checkPin = (requiredPin) => {
+        if (!requiredPin)
+            return true;
+        return pin === requiredPin;
+    };
+    const handleStaffLogin = (targetRole) => {
+        const pins = (config === null || config === void 0 ? void 0 : config.pins) || {};
+        const requiredPin = pins[targetRole] || "";
+        if (!checkPin(requiredPin)) {
+            setPinError("Incorrect PIN");
+            setPin("");
+            return;
+        }
+        setPinError("");
+        onLogin(targetRole, "", "");
+    };
+    const handleCrewLogin = () => {
+        if (!name.trim())
+            return;
+        onLogin("crew", name.trim(), car);
+    };
+    return (React.createElement(React.Fragment, null,
+        React.createElement("style", null, G),
+        React.createElement("div", { className: "login-bg" },
+            React.createElement("div", { className: "logo" }, "PITWALL"),
+            React.createElement("div", { className: "logo-sub" }, "Race Team Tracker"),
+            React.createElement("img", { src: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAARMAAAC3CAMAAAAGjUrGAAAAllBMVEX///+WlJX8/PzDw8MMCQsgHyAAAAAoKCgfHR75+fn19fXt7e0dGxzn5+f39/cbGRrh4eG1tbWMjIzOzs7V1dXHx8fj4+O8vLwXFRbb29utra0lIySlpaVycnLMysuxsbGDg4OdnZ1sbGx7e3sxLzBMSktkZGREQkNRUVFaWlo3NzePj4+IhodfX19CQEE6OjoREhEbFBbH7VO4AAAULUlEQVR4nO1ciXajuLYVgzFITGISgzAIDMYBJ+7//7l3BE7iDF33dt/kdaWXdiU2CImgraMzSRRCCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgob9NuX83Kuv7nw8v2hyXrwrpb+sfbPBYZfJzZiHTdp4XgGA46cP6m7dfzWe+fjlX8LPE6R17LJYzyeHVH2MWIt0z+Iif7ZiY5u8vWvogTxqGWZptOyD0mb1U7TxKMREay/Fxeclqmv4+3kdRYRXPy/Pu83QydajDSKxlI4pD/rSIwNirs2xksy1H3ydkakKUrjhDmO5xCiY+I5ukecgmYMTv89glJrdVIKFE+NjogHJIUO8jque1orkBjeVk6phwktE8piRhPGaBHTxkhFwllJfj4n+k0AOpLUUQs6BaHQ4JrQOA2R4yByHoaonp5r374KxoviEDaEGgZvSMi4nlDCSKnTnz991k4WPfMpR4XwcKZN1cNw6erucn46TrzAYULEk1aeL3eNYg95NDlkqc/SImUOYdCaEmAFseSf6sqXYZWSlmlt0yFEaF3VnHmrQs2Y4Lw7doygpDoL7+K8ToqEHVjssSRGiREbqePBB6WkKVJ0+PlyskIwFNfwe7H65GZMHP64rzofF4t9LhxqoKK+b+FlQBzBGDme52DdwSlJDZ0QDIX/RA++GCT0ww6MBdaOXfjiitFrXgVmC8dFvee+r2ugLGbv5n/om4A5zwpGR0lJyb/GNcF929JLjLLLwGRPnbVfTmft3cquDNnN82lM8LL05aJtvXaSOI3DcLvBHQ96+O8gBY8kK2ecTLV3c0UlyofxGOxys5Qnl2J8iD0Do8jY2uheWnoJ+CIIYx2cEwgKYP54GFOP6D/dP5FPn/YgHcax3maE44OgZG3PeGXbR0tAhaIF/+QxBaLabWrBb0YR0YyGLDRtKANzQz3GStZQmvxkStZHx3GB2xKFVu8gR8fx8rB7PPcTRWGhacyYZA85R6VoT4U3MappmwoNGSINSr3IbwhqvAaVBQPzzPQs/Uc79T8DWBGztvQcn3tQkBD+nTR2CPnDJUNxhkhStmXsxzVHbMHd6POlSbtNZYQQLDJkkBmVGDUgNWXCQHiYEx7QT1e1NfhbCYlOoBm08+OpkMkBnUAwDP4XoR04KEOkLShtUfgkdAJGiKztQE6AkzTUUMHLBgsaebQpJSfpD9cnOtgXw0H0IU6iUXie7C9uMyStbCHE6qsIDNVYj1C8j8GLuRkb5MvWPvJ1hEEB+Q7yExKnL5HCj4UuZaI29PPTWDO8FiAv2ofbNQknXl2wQ9/CZ9057dJw5ut3d1hTc6tyTtIYo7em+f+rI1+JpOvqs2inI5cSklEKx/n5zhElETimRl0b8npipkUtaGcgzCh7jvVwsnV+jQeKZ1a2CfQTfVrRSFoKn5AEE+/QaXExmHmP5eBn4Jo47cN07qJ466ffn2BmeBdwUpyCOpj4CIN734CbQjBBDnwzIj/h1yfgGGNq/DxSmk7TYmmQxy5aFiEVSWnaVu/BAY2RL8p14J/zSfEucVhvSFc3ZJilzKMGLURaYs54mDIWg2pmTRIzRjkBJy+N/X+wd38LZSsKeHQxjkZYhNuQ4lNe7XqtJEsWR0yW6C/ZaKeOwtpYj0PgggoeI0JKREkJgsN0DHw0SJ8NTGjCwkR6uf9c7/4eIpQOp9OuS54DOfm75PmZOGE5iIfDa+mmL/mE+2mYIAgKjSJ1SBpDgNwAJxQV1HCAk6LRgRPiUcRTgn6emsXC6QVOjtmbUmqaF72g9cCOW3borlvJk4x9+QLaxiDswEIaM/BfU2LoYZwaaZwSltIiMViDDPrzGIEnbg+RTAq8ffIkzzt/KUONTt77Fs6TgYioGXIccPIyiPxCAo6c1Kg+djJwfR35CfSAuvmZuaX56VIi8fiWk+LRbBFYjf4YvRtnOBt4PDYvmfm3a4X6y69nxLhI76+9x+8aPMND+cVR7+u3xaSzYIKQZrqWH9t0Iq7LmLzvz6f9+4VH+5qT+Iv4fiLTuV/0un1bmEwWmJtMG2zjY4s+0mPe9r++ra5vPttvKQn/AbhOiON30dtSNtXdolHxFCQf14p7WRlPvpMVRbGFPs/i4EBJQV6X35+/cVEk94pJf3f+38OXf+FvtfwLqGnh4Xp5M6C6qOdoEbw9PX6SCekjXPYjBMOPlmVdpcF6EYcGSqz2o2wYuWX14LoRz/PkVdm0+0t+C4aWcnQI/IHHv9Dub0BHpBQXv63vi5B3sk6UZKe2XcRr6fNBp6WT9FrCKbDtXNzf7hTsbDN6ryl0dDhWZguczI+nYyG9vcE1e/ya6/7FA94Ejj+dzuBtI1LZ+fCrBl8A4L65+tr0ogzhm9TWKTngw1Dyh8fD+/6hiWMhF0/Dyd1V5ohvxYDEsjdO3rMSH92Vk9bKLZm1C082RFTbDT/b3fKBJl2z8qMcCLJzJSevIeZ36NykbkNU7u5vLKwJpqw3arTNp6p5b4wfQP2StkXZlFf2bn+nhRfzxsl7O5se3Vxy0ueVlcC1bIC5dAuf32ie+wzEy4FMZ2im/XSQYu3m1un5yt82Xb+EjnppbVP3VePp0FfN0Uk0cnbpu3HQvDdDWDxlWZzyVi8m17Ztc3GeHy0b8t3KyVpwr5sPUk6gtDVdS2pIr+Gc4ee+bzeQ9Mjc+N0+H2fNy/iyBDh5kKE55oBnQnTnO1jREavbvsym8q7kREH9JW7QjkJn/VjfFjhul/lEtHVtvZhsu7KDpwLdhrncVSsn0OWyjG8JKVqWJcgJcFfw5pzvrnNTJoTR8uBjXpYZoW1dR7FMQPC+rpfnLQlOqsGFPqLwx5OyHHP7GDVl7DQNpdufO2hQvxXhN4gKwfiM7twNYzjEDJVPrpvvn1qCeTdf7jMgfUsuVB6EMHfcyrZKtI0Vrq+7jZNkZ1vRJidkyIM9yIltzqXp2tXOrlyLe0P+R48zUD/L6Jp5nu85+ES5ec1NF6IJIIi0eXC9whV7SBCHisC37V45rtzrur+h6NxctjQfyv+kp/8GvFlD9HRLJurFeV66jNSuOT0c607DKI7L6JWUEMxzXFMfbTrWrfJpzSSAZD3kssdXyYm7WR/JSeBWwMnOnBtLUgb/LE6GP8DuEMu2j4GdB4Ed2PR8DdzcdXegaByg5Ao2zc5hduYTLqGibFuZnFTBaneSESoEQQ7Xj1T/s/12fw9gA3oYdSIV59qxoR4uHhb1Q1+kkzWNWgpuGRcv1oHvgR+8cGl3/rCPj9CRFK3bAEW+2z9Uu01Orq+c2JITO2+5ZZlAomlZIhyCfOVk5wbBNA65Ddzm+0s3uGDN4VF4DueP43gCkkwNWgLdAbTUMMzWQbqMJlQYxvPerMxj/LWUgPoQyEmctvZXM3y5TpHn+2KvwRmmw74HN54XWnxjkBw5qVttBE6y6Y/dg2ZWVo3lOGHo2bBAn+fPOPnDnElB+tw2GSlw9iwnu+CcYky6q73LhwMcCRfYQ+gpD47Cg/MShOUMrt7yh/1EiUfIbvVPIrO6PpVQoeitvdV/8dTRvb6rBw0fpY4AR4WFclvbfr5NUdaBDU2mY30Tz+VMWF8Y0qBKn23vPeT2fl1k59bOXFhufy4nldnDHXpzt9qdcLA3OXE3/wc0i1yql5yDBI3EsyqrRZs3FASPofQP3IdXn614AmW3JgARqCb3KXvfq/8dWU11MRHkzNcRjAKf9qXvoG2BgvAO+zHtNo2S7A2dyImjr/rE3WEQFHOBi95k2teEwtnnc8ds4X5tblsySQVWe5OTvF4VJDFBGuQeDx2PuXvOEvDgxRa0n9zgBFc0011TfsCJe0Klu8sXHdQIDM0CE+uTSPV/xcUASzjMiFpT4qAkr1L0unAVm3BmbApF7zrpI/RyxHTQJ25FEte1Bxh7JvUtouaf6JPdShzMnU1Opps+yZfVvSOgaTfW8SXIz5mfZCFJeD+eofkqJ6+cuMAJeCtVvGkx5KXp4eu3FPLI8VLPcIeT9Nya03gnig49drOT1EQ6YY7YE9bxUHB965hdEdybtkmRL6dF+cJJ9WqLN7tjX1c5gUqbnLhXycku17Zaf4DErA1AToJzhnDagUY2czAs1YucbHPHBR3bg37d3KJvgS5XvbRlrvl5lENJzvRuzxrYIaofcF0CJRiVR+a0MxXzOi7g7wInqARLMIEhhvEsXjhxX+XEXTlx33ES/CknYIgyvd/dDI0t58obTsDu6L0ZTNuGu29L0BQFLs9zKIPgsEude2vfy0dltdyEgege3LNiJLdL4LPB3EEExMVKuFVJjfHMye7ZP8lO7qdy8pGT7llOwM4wcFSsfOi5kVwC+/GtPgE5gcBKTqj1TxBwbEP0DUjO4wEZmV+e5TR9XQSPrZqw6SzDetLaFDcZSNVtbFa7AwRp1i64DHYg49YbJy7o3W2fG3j17p2O/TNO8jtOgovXwXzkWwgGFv6djg1O4AoFLrsFx6UVVPQ7ONFkwEPKbr8u/73k1pwxaLi1RjSHy8QQ73uNjjfGbnNHdmgHXrtZE/2Zk/0u77aVHS3f/VVOwAIB20+bD1m4r3Pn1e6wfXW9yAkMo1fDlW/ZjhvBgOudZcTT6d6uMWtKT08Qzun8CJEgOvRO3Dyn/sKNEx16CrPetmW4unFSnNbBlXWG4D0nBfpEx0JseM/JOXf36wVcmzv3lElO7Dv/hEw5BAubMsx3wfQNSkVne5C+zKIEe+1+jG9iovu16I39ATmH81E4Bdjj7i6LCv7JKicgFhDbBUd5SMFnW2Taf593nq8nZ6Bt07ErJwtoHREaHvgn196Xtljbsli5G9xxIudO3mY6Poz5rsofFs3nZnDkxSEEP1b69tyEQYhCH5cDONL8G/IF3sMFpHApD/XZQ0X7eCqTTC58Nz0x+BhHD4+zh7xLVMdCyK20W7tsCtyVE9yDkTDXJCSV4wdT6HitcqsKLAiF7d3qn6w6lpuVLaMWb7DNZzmR3SHXnVnfcWKYrmuaQWDlLoTVrjnozNwiJbK38xM8cw1/G66aFgzC+MUbF7Yl4DM4TEbVzx7IQeiHtHs61bMQ0yiW0/GxpSFhurOkcVQXmEe3yVMM5nW3JunZLjefVvtMrcBaHN3nwTWwXTfPx2Nu2uiwv8oNhBBUWy5YKUFOplljz8rNLYYgZm51K9X4YppThloIim0XTHpVT2ZgTuAgQiAAEoHt3JRxcbgEV/AWbfdqjt+hTcKBTnrWpaGjjyi51J7ugBPZdufzuVuaRK5u8TFCdEGYIJ+Km+Xz6tNwJtvRMIg152UM0yCkZ9qcXfNqPswELp1RfD6dhOxz3D8F9o5Dg9OMw2E6rTkzELlhaDdO2tMAmgs356tpmrszc5J+OkcYxW21yyuOh2FYE+pOXFemZdqnL38vBvS2k4wzv0SL7F7SH7qkT3TOwfrK7hJ4UN6HqIlFW366zAUE3L1UebdEioskfL1y//Wm+SdHW2KRQHvyadPbchrSs6L4sBz5FYDopW+HsW0K8GJJ3Re4I8nYF8ioGQrl/tAxahFNEdWeZfR1wfP+gZ9XHbafu0e9fz/wteXHrPub3Oqvuvomr6Z/cUJpBa6vkVjqpb9A/7EPvGR9wgtH04CKWqToNJ7L5hsiz98WoSaWixm4T6XnzBdNE5p23A98Sg7TOCGt7ntyHMbKbbXfGOJrJ5CxswK5TJPvp3owV+ykHbwMprufz9drBS6GHezM3xjW6Wt3zBn7nVyl2cl8L5h8MG4VGFHbNoOdbUOJCx+7oHLXJPFvivz0tXKSPuxfUMmPY3XcjqrtdP/7o5q+1mkjxj3Y88+b0/ui3xLpdyVRFD7Dp0v8Hyr9qvCTrVqfO2W/NRyyvoihe54nX6/wiiKUr7HBqdw/g+F6WBQe1tcashQ837WIbDtsoES+nUGyMMmII98gXcuwk92urrWzb3E3vwuZ0Cg4goRrWoZCOkdRpBkknmdp96MUH3g0RzMvdAIl8CNiFPNZaLMoENucA6b7CYd2MzcQKaHWrAlarDfQZprAncUsvnap7ntRCKF5EOhEIsoIX5iHE75QXBRMK4sCG5EWE48tIiORiIvCmEUoosQhLOKYaszzgI4w1KIDwQdtToDbNAxTbY7DzAAqw4zPKSbpLMh/fpbfBaFoBAwv5zTKDpEmnZ9Qm6ED8ULlLmvtIKOLJjK8SIDFCyNRiNkg8l0MRKMUJl8ZHYyIrkHxXAInEDV7QuYTiojL9eUIeAb80x39C8hESjV4fINFIdPWyJ3wGfoVR3JpXdMKqRyh096sgdUrtRSmzKKJkoUQFTZJnIoZptxBqtdE4xnXqAF35KCckplDYSyiSJS0+EEKJdTiZE6o5rEoY9EzJxlCh6iBAZecQG8kJ5EmhIi0g3xp3aBi4R6VCmYWqdOAwMjUqMY90DUwGyOZdEuidWmMhIcGSr9j68w3IRMx5mKmOsydZJ5DHfmgB7DkBOTELyOKkQ5KIQZ9IhMsc5lRKv8rED4XVLvtHU9nTuQOyoXB3CnkhIygbjGXYMGofBeMlNEPUrIh9AsUaaE3SwZsaCwto3VjxSon0PWlTJmIGkIWDfqZRdwrF54eaFSSVZ9IQJc5zKuIk02fEFDYwN+61k4XwWKqCe/nyAlhBfKogfW0IchPGiE4ky/TooKuHrNncCHKA4F+y015hFJCZBFnHoqb5ywTOchahoewIYUIGw0IXNYY+vq/Lq33RD/IaXvnguofnFldv9uJuG1S1D++LbsV6XfZttdP/Zs2bf7O+G9CAgUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBYUvw/8BExrA1i0KhskAAAAASUVORK5CYII=", alt: "Multimatic Motorsports", style: { height: 52, marginBottom: 32, objectFit: "contain",
+                    filter: "invert(1) contrast(1.1)", opacity: .9 } }),
+            React.createElement("div", { className: "sim-banner", style: { marginBottom: 14 } },
+                React.createElement("div", null,
+                    React.createElement("div", { className: "sim-banner-txt" }, "PITWALL DEMO BUILD"),
+                    React.createElement("div", { className: "sim-banner-sub" }, "Isolated from live PITWALL storage \u2014 safe to experiment"))),
+            !role && (React.createElement("div", { className: "card" },
+                React.createElement("h2", null, "Select Role"),
+                React.createElement("button", { className: "role-btn", onClick: () => setRole("crew") },
+                    React.createElement("span", null, "Crew"),
+                    React.createElement("span", { className: "role-icon" }, "Field \u2192")),
+                React.createElement("button", { className: "role-btn", onClick: () => { setRole("overview"); setPin(""); setPinError(""); } },
+                    React.createElement("span", null, "Overview"),
+                    React.createElement("span", { className: "role-icon" }, "Read Only \u2192")),
+                React.createElement("button", { className: "role-btn", onClick: () => { setRole("lead"); setPin(""); setPinError(""); } },
+                    React.createElement("span", null, "Lead"),
+                    React.createElement("span", { className: "role-icon" }, "Full Access \u2192")),
+                React.createElement("div", { className: "f", style: { marginTop: 16 } },
+                    React.createElement("label", null, "Units"),
+                    React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 4 } },
+                        React.createElement("button", { onClick: () => setMetric(false), className: `btn btn-sm ${!metric ? "" : "btn-ghost"}`, style: { flex: 1, marginTop: 0 } }, "Imperial"),
+                        React.createElement("button", { onClick: () => setMetric(true), className: `btn btn-sm ${metric ? "" : "btn-ghost"}`, style: { flex: 1, marginTop: 0 } }, "Metric"))))),
+            role === "crew" && (React.createElement("div", { className: "card" },
+                React.createElement("h2", null, "Crew Login"),
+                React.createElement("div", { className: "f" },
+                    React.createElement("label", null, "Name"),
+                    React.createElement("input", { value: name, onChange: e => setName(e.target.value), placeholder: "e.g. Marco", onKeyDown: e => e.key === "Enter" && handleCrewLogin(), autoFocus: true })),
+                React.createElement("div", { className: "f" },
+                    React.createElement("label", null, "Car"),
+                    React.createElement("select", { value: car, onChange: e => setCar(e.target.value) }, (config.activeCars || DEFAULT_CARS).map(c => { var _a; return React.createElement("option", { key: c, value: c }, ((_a = config.carNames) === null || _a === void 0 ? void 0 : _a[c]) || c); }))),
+                React.createElement("div", { className: "f" },
+                    React.createElement("label", null, "Circuit"),
+                    React.createElement("select", { value: circuit.name, onChange: e => setCircuit(CIRCUITS.find(c => c.name === e.target.value)), style: { width: "100%", background: "var(--bg)", border: "1px solid var(--b2)", color: "var(--txt)", padding: "11px 14px", fontFamily: "JetBrains Mono", fontSize: 12, borderRadius: "var(--radius-sm)", outline: "none" } }, CIRCUITS.map(c => React.createElement("option", { key: c.name, value: c.name },
+                        c.name,
+                        " \u2014 ",
+                        metric ? (c.miles * 1.60934).toFixed(3) + " km" : c.miles + " mi",
+                        " / lap")))),
+                React.createElement("button", { className: "btn btn-grn", onClick: handleCrewLogin }, "Enter Pit"),
+                React.createElement("button", { className: "btn btn-ghost", onClick: () => setRole(null), style: { marginTop: 8 } }, "\u2190 Back"))),
+            role === "overview" && (React.createElement("div", { className: "card" },
+                React.createElement("h2", null, "Overview Access"),
+                React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 10, color: "var(--txt3)", letterSpacing: 2, marginBottom: 16 } }, ((_a = config === null || config === void 0 ? void 0 : config.pins) === null || _a === void 0 ? void 0 : _a.overview) ? "ENTER PIN" : "NO PIN SET — TAP ENTER"),
+                pinError && React.createElement("div", { className: "pin-error" }, pinError),
+                React.createElement("input", { className: "pin-input", type: "password", inputMode: "numeric", value: pin, onChange: e => { setPin(e.target.value); setPinError(""); }, onKeyDown: e => e.key === "Enter" && handleStaffLogin("overview"), placeholder: "\u2022\u2022\u2022\u2022", autoFocus: true }),
+                React.createElement("button", { className: "btn btn-out", style: { color: "var(--blu)", borderColor: "var(--blu)" }, onClick: () => handleStaffLogin("overview") }, "Enter Overview"),
+                React.createElement("button", { className: "btn btn-ghost", onClick: () => { setRole(null); setPin(""); setPinError(""); }, style: { marginTop: 8 } }, "\u2190 Back"))),
+            role === "lead" && (React.createElement("div", { className: "card" },
+                React.createElement("h2", null, "Lead Access"),
+                React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 10, color: "var(--txt3)", letterSpacing: 2, marginBottom: 16 } }, ((_b = config === null || config === void 0 ? void 0 : config.pins) === null || _b === void 0 ? void 0 : _b.master) ? "ENTER PIN" : "NO PIN SET — TAP ENTER"),
+                pinError && React.createElement("div", { className: "pin-error" }, pinError),
+                React.createElement("input", { className: "pin-input", type: "password", inputMode: "numeric", value: pin, onChange: e => { setPin(e.target.value); setPinError(""); }, onKeyDown: e => e.key === "Enter" && handleStaffLogin("lead"), placeholder: "\u2022\u2022\u2022\u2022", autoFocus: true }),
+                React.createElement("button", { className: "btn", onClick: () => handleStaffLogin("lead") }, "Enter Lead"),
+                React.createElement("button", { className: "btn btn-ghost", onClick: () => { setRole(null); setPin(""); setPinError(""); }, style: { marginTop: 8 } }, "\u2190 Back"))))));
+}
+function FieldView({ data, car, userName, circuit, updateCar, tab, setTab, onLogout, metric, config, updateConfig }) {
+    var _a, _b, _c;
+    const LOW_FUEL_LITRES = 20;
+    const carData = (data === null || data === void 0 ? void 0 : data[car]) || {};
+    const laps = carData.laps || [];
+    useEffect(() => {
+        saveUser(userName, car);
+        const heartbeat = setInterval(() => saveUser(userName, car), 60000);
+        return () => clearInterval(heartbeat);
+    }, [userName, car]);
+    const [running, setRunning] = useState(false);
+    const [elapsed, setElapsed] = useState(0);
+    const [splits, setSplits] = useState([]);
+    const startRef = useRef(null);
+    const splitRef = useRef(null);
+    const tickRef = useRef(null);
+    const lapElapsedRef = useRef(0);
+    const lapWriteLockRef = useRef(false);
+    useEffect(() => {
+        const saved = readTimerState(car, userName);
+        if (!saved || !saved.running || !saved.startAt || !saved.splitAt)
+            return;
+        const age = Date.now() - saved.savedAt;
+        if (age < 0 || age > 12 * 60 * 60 * 1000) {
+            writeTimerState(car, userName, null);
+            return;
+        }
+        startRef.current = saved.startAt;
+        splitRef.current = saved.splitAt;
+        lapElapsedRef.current = Date.now() - saved.splitAt;
+        setElapsed(Math.max(0, Date.now() - saved.startAt));
+        setRunning(true);
+        tickRef.current = setInterval(() => setElapsed(Date.now() - saved.startAt), 33);
+        return () => clearInterval(tickRef.current);
+    }, [car, userName]);
+    const [tireSet, setTireSet] = useState("");
+    const [msg, setMsg] = useState("");
+    const [fuelCapInput, setFuelCapInput] = useState("");
+    const [fuelPerLapInput, setFuelPerLapInput] = useState("");
+    const [fuelAddInput, setFuelAddInput] = useState("");
+    const flash = m => { setMsg(m); setTimeout(() => setMsg(""), 2500); };
+    const saveFuelSetup = async () => {
+        const capGal = fuelCapInput ? (metric ? parseFloat(fuelCapInput) / 3.78541 : parseFloat(fuelCapInput)) : null;
+        const burnGal = fuelPerLapInput ? (metric ? parseFloat(fuelPerLapInput) / 3.78541 : parseFloat(fuelPerLapInput)) : null;
+        if (capGal === null && burnGal === null)
+            return;
+        if ((capGal !== null && !Number.isFinite(capGal)) || (burnGal !== null && !Number.isFinite(burnGal)) ||
+            (capGal !== null && capGal < 0) || (burnGal !== null && burnGal < 0)) {
+            flash("Enter valid fuel values");
+            return;
+        }
+        await updateCar(c => ({
+            ...c,
+            ...(capGal !== null ? { fuelCapacity: capGal, fuelUsed: 0 } : {}),
+            ...(burnGal !== null ? { fuelPerLap: burnGal } : {}),
+            lastUpdate: Date.now(),
+        }));
+        if (fuelCapInput)
+            setFuelCapInput("");
+        if (fuelPerLapInput)
+            setFuelPerLapInput("");
+        flash("Fuel setup saved ✓");
+    };
+    const addFuel = async () => {
+        if (!fuelAddInput)
+            return;
+        const addedGal = metric ? parseFloat(fuelAddInput) / 3.78541 : parseFloat(fuelAddInput);
+        if (!Number.isFinite(addedGal) || addedGal <= 0) {
+            flash("Enter a valid fuel amount");
+            return;
+        }
+        await updateCar(c => {
+            const capacity = Number(c.fuelCapacity) || 0;
+            const newFuelUsed = Math.max(0, Math.min(capacity || Infinity, (c.fuelUsed || 0) - addedGal));
+            return { ...c, fuelUsed: newFuelUsed, lastUpdate: Date.now() };
+        });
+        setFuelAddInput("");
+        flash(`+${fuelAddInput} ${fuelUnit(metric)} added ✓`);
+    };
+    const startStop = () => {
+        if (!running) {
+            const now = Date.now();
+            startRef.current = now - elapsed;
+            if (splitRef.current === null)
+                splitRef.current = now;
+            else
+                splitRef.current = now - lapElapsedRef.current;
+            setRunning(true);
+            clearInterval(tickRef.current);
+            tickRef.current = setInterval(() => setElapsed(Date.now() - startRef.current), 33);
+            writeTimerState(car, userName, {
+                running: true,
+                startAt: startRef.current,
+                splitAt: splitRef.current,
+                savedAt: now,
+                circuitName: circuit.name,
+                circuitMiles: circuit.miles,
+            });
+        }
+        else {
+            const now = Date.now();
+            clearInterval(tickRef.current);
+            lapElapsedRef.current = now - splitRef.current;
+            setRunning(false);
+            writeTimerState(car, userName, {
+                running: false,
+                startAt: startRef.current,
+                splitAt: splitRef.current,
+                elapsed: now - startRef.current,
+                lapElapsed: lapElapsedRef.current,
+                savedAt: now,
+                circuitName: circuit.name,
+                circuitMiles: circuit.miles,
+            });
+        }
+    };
+    const recordLap = async () => {
+        if (!running || lapWriteLockRef.current || !splitRef.current)
+            return;
+        lapWriteLockRef.current = true;
+        try {
+            const now = Date.now();
+            const lapMs = now - splitRef.current;
+            if (!Number.isFinite(lapMs) || lapMs <= 0)
+                return;
+            splitRef.current = now;
+            lapElapsedRef.current = 0;
+            const newSplit = { id: makeId("lap"), time: lapMs, at: now, by: userName, date: dateLabel(), timeOfDay: nowLabel(), distanceMiles: circuit.miles };
+            setSplits(s => [...s, newSplit]);
+            writeTimerState(car, userName, {
+                running: true,
+                startAt: startRef.current,
+                splitAt: splitRef.current,
+                savedAt: now,
+                circuitName: circuit.name,
+                circuitMiles: circuit.miles,
+            });
+            await updateCar(c => {
+                var _a, _b;
+                const currentSet = c.currentTireSet || "Set A";
+                const newTireM = (((_a = c.tireSets) === null || _a === void 0 ? void 0 : _a[currentSet]) || 0) + circuit.miles;
+                const burnPerLap = c.fuelPerLap || 0;
+                return {
+                    ...c,
+                    laps: [...(c.laps || []), { ...newSplit, lap: (((_b = c.laps) === null || _b === void 0 ? void 0 : _b.length) || 0) + 1, tireMilesOnSet: newTireM, fuelPerLap: burnPerLap }],
+                    totalMileage: (c.totalMileage || 0) + circuit.miles,
+                    fuelUsed: c.fuelCapacity > 0 ? Math.min(c.fuelCapacity, (c.fuelUsed || 0) + burnPerLap) : (c.fuelUsed || 0) + burnPerLap,
+                    tireSets: { ...c.tireSets, [currentSet]: newTireM },
+                    lastUpdate: now, status: "Racing",
+                };
+            });
+        }
+        finally {
+            lapWriteLockRef.current = false;
+        }
+    };
+    const resetSW = () => {
+        clearInterval(tickRef.current);
+        setRunning(false);
+        setElapsed(0);
+        setSplits([]);
+        startRef.current = null;
+        splitRef.current = null;
+        lapElapsedRef.current = 0;
+        writeTimerState(car, userName, null);
+    };
+    useEffect(() => () => clearInterval(tickRef.current), []);
+    const bestSplitMs = splits.length ? Math.min(...splits.map(s => s.time)) : null;
+    const currentTireKm = (((_a = carData.tireSets) === null || _a === void 0 ? void 0 : _a[carData.currentTireSet]) || 0) * 1.60934;
+    const tireAlarm = currentTireKm >= TIRE_LIMIT_KM;
+    const tireWarn = !tireAlarm && currentTireKm >= TIRE_WARN_KM;
+    const tireRemKm = Math.max(0, TIRE_LIMIT_KM - currentTireKm);
+    const fuelCapGal = carData.fuelCapacity || 0;
+    const fuelUsedGal = carData.fuelUsed || 0;
+    const fuelRemainingGal = Math.max(0, fuelCapGal - fuelUsedGal);
+    const fuelRemainingL = fuelRemainingGal * 3.78541;
+    const lowFuel = fuelCapGal > 0 && fuelRemainingL <= LOW_FUEL_LITRES;
+    const fuelPct = fuelCapGal > 0 ? Math.min(100, (fuelRemainingGal / fuelCapGal) * 100) : 0;
+    const fuelBarColor = fuelPct > 40 ? "#00e87a" : fuelPct > 20 ? "#ff9500" : "#ff4020";
+    const lapChartData = laps.map((l, i) => ({ lap: `L${i + 1}`, sec: msToSec(l.time), time: msToLabel(l.time) }));
+    const tireChartData = Object.entries(carData.tireSets || {}).map(([k, v]) => ({ set: k, dist: distVal(v, metric) }));
+    let cumulativeFuelGal = 0;
+    const fuelChartData = laps.map((l, i) => {
+        cumulativeFuelGal += l.fuelPerLap || 0;
+        return { lap: `L${i + 1}`, fuel: +fuelVal(cumulativeFuelGal, metric).toFixed(2) };
+    });
+    const tooltipStyle = { background: "#111", border: "1px solid #242424", fontFamily: "JetBrains Mono", fontSize: 11 };
+    const axTick = { fill: "#5a5a5a", fontSize: 9, fontFamily: "JetBrains Mono" };
+    return (React.createElement(React.Fragment, null,
+        React.createElement("style", null, G),
+        React.createElement("div", null,
+            React.createElement("div", { className: "hdr" },
+                React.createElement("div", { className: "hdr-title" },
+                    "PITWALL ",
+                    React.createElement("span", { style: { fontFamily: "JetBrains Mono", fontSize: 9, letterSpacing: 2, color: "var(--blu)" } }, "DEMO \u00B7 CREW")),
+                React.createElement("div", { className: "hdr-right" },
+                    React.createElement("span", { style: { display: "flex", alignItems: "center", gap: 6, fontFamily: "JetBrains Mono", fontSize: 10, color: "var(--grn)", letterSpacing: 1 } },
+                        React.createElement("span", { className: "live-dot" }),
+                        "DEMO"),
+                    React.createElement("span", { style: { fontFamily: "JetBrains Mono", fontSize: 10, color: "var(--txt3)", letterSpacing: 1 } }, userName),
+                    React.createElement("button", { className: "exit-btn", onClick: onLogout }, "Exit"))),
+            React.createElement("div", { className: "tabs" }, ["overview", "stats", "charts", "tires", "fuel", "notes"].map(t => (React.createElement("div", { key: t, className: `tab ${tab === t ? "on" : ""}`, onClick: () => setTab(t) }, t)))),
+            React.createElement("div", { className: "wrap" },
+                React.createElement("div", { className: "car-banner" },
+                    React.createElement("div", null,
+                        React.createElement("div", { className: "car-banner-name" }, ((_b = config.carNames) === null || _b === void 0 ? void 0 : _b[car]) || car),
+                        React.createElement("div", { className: "car-banner-circuit" },
+                            "\uD83C\uDFC1 ",
+                            circuit.name,
+                            " \u00B7 ",
+                            circuitDist(circuit.miles, metric),
+                            " ",
+                            distUnit(metric),
+                            "/lap")),
+                    React.createElement("div", { style: { textAlign: "right" } },
+                        React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 24, color: "var(--txt)" } }, laps.length),
+                        React.createElement("div", { style: { fontSize: 9, color: "var(--mut)", letterSpacing: 2, fontFamily: "JetBrains Mono", textTransform: "uppercase" } }, "Laps"))),
+                msg && React.createElement("div", { className: "toast" }, msg),
+                tab === "overview" && tireAlarm && (React.createElement("div", { className: "tire-alarm" },
+                    React.createElement("div", null,
+                        React.createElement("div", { className: "tire-alarm-txt", style: { color: "var(--red)" } }, "\u26A0 TIRE LIMIT REACHED"),
+                        React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 10, color: "var(--red)", marginTop: 2, letterSpacing: 1 } },
+                            carData.currentTireSet,
+                            " \u2014 CHANGE REQUIRED")),
+                    React.createElement("div", { className: "tire-alarm-val", style: { color: "var(--red)" } },
+                        currentTireKm.toFixed(1),
+                        " km"))),
+                tab === "overview" && tireWarn && (React.createElement("div", { className: "tire-warn" },
+                    React.createElement("div", null,
+                        React.createElement("div", { className: "tire-alarm-txt", style: { color: "var(--org)" } }, "\u26A1 TIRE WARNING"),
+                        React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 10, color: "var(--org)", marginTop: 2, letterSpacing: 1 } },
+                            carData.currentTireSet,
+                            " \u2014 ",
+                            tireRemKm.toFixed(1),
+                            " km remaining")),
+                    React.createElement("div", { className: "tire-alarm-val", style: { color: "var(--org)" } },
+                        currentTireKm.toFixed(1),
+                        " km"))),
+                tab === "overview" && lowFuel && (React.createElement("div", { className: "fuel-alarm" },
+                    React.createElement("div", null,
+                        React.createElement("div", { className: "fuel-alarm-txt" }, "\u26A0 LOW FUEL"),
+                        React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 10, color: "var(--acc2)", marginTop: 2, letterSpacing: 1 } }, "BELOW 20 L THRESHOLD")),
+                    React.createElement("div", { className: "fuel-alarm-val" },
+                        fuelRemainingL.toFixed(1),
+                        " L"))),
+                tab === "overview" && React.createElement(React.Fragment, null,
+                    React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" }, "Lap Stopwatch"),
+                        React.createElement("div", { className: "sw-display" },
+                            React.createElement("div", { className: "sw-time" }, msToDisplay(elapsed)),
+                            React.createElement("div", { className: "sw-lap-count" }, splits.length > 0 ? `LAP ${laps.length + splits.length + 1} IN PROGRESS` : "READY")),
+                        React.createElement("div", { className: "sw-btns" },
+                            React.createElement("button", { className: `btn btn-sm ${running ? "btn-red" : "btn-grn"}`, onClick: startStop }, running ? "⏸ Pause" : elapsed > 0 ? "▶ Resume" : "▶ Start"),
+                            running && React.createElement("button", { className: "btn btn-sm btn-org", onClick: recordLap }, "Lap \u2713"),
+                            !running && elapsed > 0 && React.createElement("button", { className: "btn btn-sm btn-ghost", onClick: resetSW }, "Reset")),
+                        splits.length > 0 && (React.createElement("div", { style: { padding: "0 14px 14px" } },
+                            React.createElement("div", { className: "lap-scroll" }, [...splits].reverse().map((s, i) => {
+                                const isBest = s.time === bestSplitMs;
+                                return (React.createElement("div", { className: "lap-row", key: i },
+                                    React.createElement("span", { className: "lap-num" },
+                                        "L",
+                                        splits.length - i),
+                                    React.createElement("span", { className: `lap-time ${isBest ? "lap-best" : ""}` },
+                                        msToLabel(s.time),
+                                        isBest ? " ●" : ""),
+                                    React.createElement("div", { className: "lap-meta" },
+                                        React.createElement("div", null, s.timeOfDay),
+                                        React.createElement("div", { style: { color: "var(--mut2)" } },
+                                            "+",
+                                            circuit.miles,
+                                            " mi"))));
+                            }))))),
+                    React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" }, "Fuel Added"),
+                        React.createElement("div", { className: "sec-body" },
+                            React.createElement("div", { className: "inline-row" },
+                                React.createElement("div", { className: "f", style: { margin: 0 } },
+                                    React.createElement("input", { type: "number", value: fuelAddInput, onChange: e => setFuelAddInput(e.target.value), placeholder: metric ? "e.g. 30" : "e.g. 8", step: "0.1", min: "0" })),
+                                React.createElement("button", { className: "btn btn-sm btn-org", style: { marginBottom: 1 }, onClick: addFuel },
+                                    "+ Add ",
+                                    fuelUnit(metric))),
+                            fuelCapGal > 0 && (React.createElement("div", { style: { marginTop: 14 } },
+                                React.createElement("div", { className: "fuel-mini" },
+                                    React.createElement("span", { className: "fuel-mini-lbl" }, "Remaining"),
+                                    React.createElement("span", { className: "fuel-mini-val", style: { color: fuelBarColor } },
+                                        fuelVal(fuelRemainingGal, metric).toFixed(1),
+                                        " ",
+                                        fuelUnit(metric))),
+                                React.createElement("div", { className: "fuel-bar-track", style: { marginTop: 8 } },
+                                    React.createElement("div", { className: "fuel-bar-fill", style: { width: `${fuelPct}%`, background: fuelBarColor } })),
+                                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginTop: 4 } },
+                                    React.createElement("span", { style: { fontFamily: "JetBrains Mono", fontSize: 9, color: "var(--mut)" } }, "0"),
+                                    React.createElement("span", { style: { fontFamily: "JetBrains Mono", fontSize: 9, color: "var(--mut)" } },
+                                        fuelVal(fuelCapGal, metric).toFixed(0),
+                                        " ",
+                                        fuelUnit(metric)))))))),
+                tab === "stats" && React.createElement(React.Fragment, null,
+                    React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" }, "Car Stats"),
+                        React.createElement("div", { className: "sec-body" },
+                            [
+                                ["Best Lap", React.createElement("span", { className: "stat-acc" }, bestLap(carData))],
+                                ["Total Laps", laps.length],
+                                [`Total ${metric ? "Distance" : "Mileage"}`, `${distVal(carData.totalMileage || 0, metric)} ${distUnit(metric)}`],
+                                ["Fuel Used", `${fuelVal(carData.fuelUsed || 0, metric)} ${fuelUnit(metric)}`],
+                                ["Circuit", circuit.name],
+                                ["Track Length", `${circuitDist(circuit.miles, metric)} ${distUnit(metric)}`],
+                            ].map(([l, v]) => (React.createElement("div", { className: "stat-row", key: l },
+                                React.createElement("span", { className: "stat-lbl" }, l),
+                                React.createElement("span", { className: "stat-val" }, v)))),
+                            React.createElement("div", { className: "stat-row" },
+                                React.createElement("span", { className: "stat-lbl" }, "Current Tires"),
+                                React.createElement("span", { className: "tire-tag" },
+                                    "\uD83D\uDD35 ",
+                                    (carData.tireSetLabels || {})[carData.currentTireSet] || carData.currentTireSet || "—")),
+                            React.createElement("div", { className: "stat-row" },
+                                React.createElement("span", { className: "stat-lbl" },
+                                    distUnit(metric),
+                                    " on Set"),
+                                React.createElement("span", { className: "stat-val" },
+                                    distVal(((_c = carData.tireSets) === null || _c === void 0 ? void 0 : _c[carData.currentTireSet]) || 0, metric),
+                                    " ",
+                                    distUnit(metric))))),
+                    laps.length > 0 && (React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" }, "Lap History"),
+                        React.createElement("div", { className: "sec-body" },
+                            React.createElement("div", { className: "lap-scroll" }, [...laps].reverse().map((l, i) => (React.createElement("div", { className: "lap-row", key: i },
+                                React.createElement("span", { className: "lap-num" },
+                                    "L",
+                                    laps.length - i),
+                                React.createElement("span", { className: "lap-time" }, msToLabel(l.time)),
+                                React.createElement("div", { className: "lap-meta" },
+                                    React.createElement("div", null, l.timeOfDay || "—"),
+                                    React.createElement("div", { style: { color: "var(--mut2)" } }, l.date || "")))))))))),
+                tab === "charts" && React.createElement(React.Fragment, null,
+                    React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" }, "Lap Times (s)"),
+                        React.createElement("div", { className: "chart-wrap", style: { paddingTop: 10 } }, lapChartData.length < 2
+                            ? React.createElement("div", { style: { textAlign: "center", color: "var(--mut)", fontFamily: "JetBrains Mono", fontSize: 11, padding: 24 } }, "Need 2+ laps to show")
+                            : React.createElement(recharts_1.ResponsiveContainer, { width: "100%", height: 170 },
+                                React.createElement(recharts_1.LineChart, { data: lapChartData, margin: { top: 4, right: 12, left: -10, bottom: 0 } },
+                                    React.createElement(recharts_1.CartesianGrid, { stroke: "#1f1f1f", strokeDasharray: "3 3" }),
+                                    React.createElement(recharts_1.XAxis, { dataKey: "lap", tick: axTick }),
+                                    React.createElement(recharts_1.YAxis, { tick: axTick, domain: ["auto", "auto"] }),
+                                    React.createElement(recharts_1.Tooltip, { contentStyle: tooltipStyle, formatter: (v, n, p) => [p.payload.time, "Lap"], labelStyle: { color: "var(--acc)" } }),
+                                    React.createElement(recharts_1.Line, { type: "monotone", dataKey: "sec", stroke: "#e8ff00", strokeWidth: 2, dot: { fill: "#e8ff00", r: 3 }, activeDot: { r: 5 } }))))),
+                    React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" },
+                            "Tire ",
+                            distUnit(metric),
+                            " by Set"),
+                        React.createElement("div", { className: "chart-wrap", style: { paddingTop: 10 } }, tireChartData.filter(d => d.dist > 0).length === 0
+                            ? React.createElement("div", { style: { textAlign: "center", color: "var(--mut)", fontFamily: "JetBrains Mono", fontSize: 11, padding: 24 } }, "No distance recorded yet")
+                            : React.createElement(recharts_1.ResponsiveContainer, { width: "100%", height: 150 },
+                                React.createElement(recharts_1.BarChart, { data: tireChartData, margin: { top: 4, right: 12, left: -10, bottom: 0 } },
+                                    React.createElement(recharts_1.CartesianGrid, { stroke: "#1f1f1f", strokeDasharray: "3 3" }),
+                                    React.createElement(recharts_1.XAxis, { dataKey: "set", tick: axTick }),
+                                    React.createElement(recharts_1.YAxis, { tick: axTick }),
+                                    React.createElement(recharts_1.Tooltip, { contentStyle: tooltipStyle, formatter: v => [`${v} ${distUnit(metric)}`, "Distance"] }),
+                                    React.createElement(recharts_1.Bar, { dataKey: "dist", fill: "#ff9500", radius: [2, 2, 0, 0] }))))),
+                    React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" },
+                            "Cumulative Fuel (",
+                            fuelUnit(metric),
+                            ")"),
+                        React.createElement("div", { className: "chart-wrap", style: { paddingTop: 10 } }, fuelChartData.filter(d => d.fuel > 0).length === 0
+                            ? React.createElement("div", { style: { textAlign: "center", color: "var(--mut)", fontFamily: "JetBrains Mono", fontSize: 11, padding: 24 } }, "Log fuel per lap to chart")
+                            : React.createElement(recharts_1.ResponsiveContainer, { width: "100%", height: 150 },
+                                React.createElement(recharts_1.LineChart, { data: fuelChartData, margin: { top: 4, right: 12, left: -10, bottom: 0 } },
+                                    React.createElement(recharts_1.CartesianGrid, { stroke: "#1f1f1f", strokeDasharray: "3 3" }),
+                                    React.createElement(recharts_1.XAxis, { dataKey: "lap", tick: axTick }),
+                                    React.createElement(recharts_1.YAxis, { tick: axTick }),
+                                    React.createElement(recharts_1.Tooltip, { contentStyle: tooltipStyle, formatter: v => [`${v} ${fuelUnit(metric)}`, "Fuel"], labelStyle: { color: "var(--blu)" } }),
+                                    React.createElement(recharts_1.Line, { type: "monotone", dataKey: "fuel", stroke: "#00b4ff", strokeWidth: 2, dot: { fill: "#00b4ff", r: 3 }, activeDot: { r: 5 } }))))),
+                    React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" }, "Laps by Time of Day"),
+                        laps.length === 0
+                            ? React.createElement("div", { style: { textAlign: "center", color: "var(--mut)", fontFamily: "JetBrains Mono", fontSize: 11, padding: 24 } }, "No laps recorded yet")
+                            : React.createElement("div", { className: "sec-body" }, laps.map((l, i) => (React.createElement("div", { className: "lap-row", key: i },
+                                React.createElement("span", { className: "lap-num" },
+                                    "L",
+                                    i + 1),
+                                React.createElement("span", { className: "lap-time" }, msToLabel(l.time)),
+                                React.createElement("div", { className: "lap-meta" },
+                                    React.createElement("div", null, l.timeOfDay || "—"),
+                                    React.createElement("div", { style: { color: "var(--mut2)" } }, l.date || "")))))))),
+                tab === "fuel" && React.createElement(React.Fragment, null,
+                    React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" }, "Fuel Setup"),
+                        React.createElement("div", { className: "sec-body" },
+                            React.createElement("div", { style: { display: "flex", gap: 8, marginBottom: 10 } },
+                                React.createElement("div", { className: "f", style: { flex: 1 } },
+                                    React.createElement("label", null,
+                                        "Tank Size (",
+                                        fuelUnit(metric),
+                                        ")"),
+                                    React.createElement("input", { type: "number", value: fuelCapInput, onChange: e => setFuelCapInput(e.target.value), placeholder: metric ? "e.g. 80" : "e.g. 21", step: "0.1", min: "0" })),
+                                React.createElement("div", { className: "f", style: { flex: 1 } },
+                                    React.createElement("label", null,
+                                        "Burn / Lap (",
+                                        fuelUnit(metric),
+                                        ")"),
+                                    React.createElement("input", { type: "number", value: fuelPerLapInput, onChange: e => setFuelPerLapInput(e.target.value), placeholder: metric ? "e.g. 3.8" : "e.g. 1.0", step: "0.1", min: "0" }))),
+                            React.createElement("button", { className: "btn btn-sm btn-grn", onClick: saveFuelSetup }, "Save Fuel Setup"))),
+                    fuelCapGal > 0 && (React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" }, "Fuel Status"),
+                        React.createElement("div", { className: "sec-body" },
+                            React.createElement("div", { className: "fuel-mini" },
+                                React.createElement("span", { className: "fuel-mini-lbl" }, "Tank Size"),
+                                React.createElement("span", { className: "fuel-mini-val" },
+                                    fuelVal(fuelCapGal, metric).toFixed(1),
+                                    " ",
+                                    fuelUnit(metric))),
+                            React.createElement("div", { className: "fuel-mini" },
+                                React.createElement("span", { className: "fuel-mini-lbl" }, "Remaining"),
+                                React.createElement("span", { className: "fuel-mini-val", style: { color: fuelBarColor } },
+                                    fuelVal(fuelRemainingGal, metric).toFixed(1),
+                                    " ",
+                                    fuelUnit(metric))),
+                            React.createElement("div", { className: "fuel-mini" },
+                                React.createElement("span", { className: "fuel-mini-lbl" }, "Used"),
+                                React.createElement("span", { className: "fuel-mini-val" },
+                                    fuelVal(fuelUsedGal, metric).toFixed(1),
+                                    " ",
+                                    fuelUnit(metric))),
+                            React.createElement("div", { className: "fuel-mini" },
+                                React.createElement("span", { className: "fuel-mini-lbl" }, "Burn / Lap"),
+                                React.createElement("span", { className: "fuel-mini-val" },
+                                    fuelVal(carData.fuelPerLap || 0, metric).toFixed(2),
+                                    " ",
+                                    fuelUnit(metric))),
+                            React.createElement("div", { className: "fuel-mini" },
+                                React.createElement("span", { className: "fuel-mini-lbl" }, "Est. Laps Left"),
+                                React.createElement("span", { className: "fuel-mini-val", style: { color: "var(--acc)" } }, carData.fuelPerLap > 0 ? Math.floor(fuelRemainingGal / carData.fuelPerLap) : "—")),
+                            React.createElement("div", { className: "fuel-bar-track", style: { marginTop: 12 } },
+                                React.createElement("div", { className: "fuel-bar-fill", style: { width: `${fuelPct}%`, background: fuelBarColor } })),
+                            React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginTop: 4 } },
+                                React.createElement("span", { style: { fontFamily: "JetBrains Mono", fontSize: 9, color: "var(--mut)" } }, "0"),
+                                React.createElement("span", { style: { fontFamily: "JetBrains Mono", fontSize: 9, color: "var(--mut)" } },
+                                    fuelVal(fuelCapGal, metric).toFixed(0),
+                                    " ",
+                                    fuelUnit(metric))))))),
+                tab === "tires" && (() => {
+                    const carTireSets = carData.tireSets || {};
+                    const carTireLabels = carData.tireSetLabels || {};
+                    const setKeys = Object.keys(carTireSets);
+                    const carTireChartData = setKeys.map(k => ({ set: carTireLabels[k] || k, dist: distVal(carTireSets[k], metric) }));
+                    const addTireSet = async () => {
+                        const usedKeys = new Set(setKeys);
+                        let letter = 0;
+                        while (usedKeys.has(`Set ${String.fromCharCode(65 + letter)}`))
+                            letter++;
+                        if (letter >= 26)
+                            return;
+                        const newKey = `Set ${String.fromCharCode(65 + letter)}`;
+                        const label = newKey;
+                        await updateCar(c => ({
+                            ...c,
+                            tireSets: { ...c.tireSets, [newKey]: 0 },
+                            tireSetLabels: { ...(c.tireSetLabels || {}), [newKey]: label },
+                        }));
+                    };
+                    const removeTireSet = async (key) => {
+                        if (key === carData.currentTireSet)
+                            return;
+                        await updateCar(c => {
+                            const ts = { ...c.tireSets };
+                            delete ts[key];
+                            const tl = { ...(c.tireSetLabels || {}) };
+                            delete tl[key];
+                            return { ...c, tireSets: ts, tireSetLabels: tl };
+                        });
+                    };
+                    const renameTireSetLocal = async (key, newLabel) => {
+                        if (!newLabel.trim())
+                            return;
+                        await updateCar(c => ({
+                            ...c,
+                            tireSetLabels: { ...(c.tireSetLabels || {}), [key]: newLabel.trim() },
+                        }));
+                    };
+                    return React.createElement(React.Fragment, null,
+                        React.createElement("div", { className: "sec" },
+                            React.createElement("div", { className: "sec-title" }, "Active Set"),
+                            React.createElement("div", { className: "sec-body" },
+                                React.createElement("div", { className: "stat-row" },
+                                    React.createElement("span", { className: "stat-lbl" }, "Set"),
+                                    React.createElement("span", { className: "tire-tag" },
+                                        "\uD83D\uDD35 ",
+                                        carTireLabels[carData.currentTireSet] || carData.currentTireSet || "—")),
+                                React.createElement("div", { className: "stat-row" },
+                                    React.createElement("span", { className: "stat-lbl" },
+                                        distUnit(metric),
+                                        " on Set"),
+                                    React.createElement("span", { className: "stat-val" },
+                                        distVal(carTireSets[carData.currentTireSet] || 0, metric),
+                                        " ",
+                                        distUnit(metric))))),
+                        React.createElement("div", { className: "sec" },
+                            React.createElement("div", { className: "sec-title" }, "Manage Tire Sets"),
+                            React.createElement("div", { className: "sec-body" },
+                                setKeys.map(key => (React.createElement("div", { key: key, style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid var(--b)" } },
+                                    React.createElement("div", { style: { flex: 1 } },
+                                        React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 9, color: "var(--mut)", letterSpacing: 2, marginBottom: 4 } },
+                                            key,
+                                            key === carData.currentTireSet ? " ● ACTIVE" : ""),
+                                        React.createElement("input", { style: { width: "100%", background: "var(--bg)", border: "1px solid var(--b)", color: "var(--txt)", padding: "6px 10px", fontFamily: "JetBrains Mono", fontSize: 13, borderRadius: 2, outline: "none" }, defaultValue: carTireLabels[key] || key, onBlur: e => renameTireSetLocal(key, e.target.value), onKeyDown: e => e.key === "Enter" && e.target.blur(), placeholder: "e.g. Soft 01" }),
+                                        React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 10, color: "var(--mut)", marginTop: 4 } },
+                                            distVal(carTireSets[key] || 0, metric).toFixed(2),
+                                            " ",
+                                            distUnit(metric))),
+                                    React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
+                                        React.createElement("button", { className: "btn btn-sm btn-out", style: { marginTop: 0, padding: "5px 10px" }, onClick: () => updateCar(c => ({ ...c, currentTireSet: key, lastUpdate: Date.now() })) }, key === carData.currentTireSet ? "Active" : "Select"),
+                                        key !== carData.currentTireSet && (React.createElement("button", { className: "btn btn-sm btn-red", style: { marginTop: 0, padding: "5px 10px" }, onClick: () => removeTireSet(key) }, "Remove")))))),
+                                React.createElement("button", { className: "btn btn-sm btn-grn", onClick: addTireSet, style: { marginTop: 4 } }, "+ Add Tire Set"))),
+                        carTireChartData.filter(d => d.dist > 0).length > 0 && (React.createElement("div", { className: "sec" },
+                            React.createElement("div", { className: "sec-title" }, "Set Mileage Chart"),
+                            React.createElement("div", { className: "chart-wrap", style: { paddingTop: 8 } },
+                                React.createElement(recharts_1.ResponsiveContainer, { width: "100%", height: 130 },
+                                    React.createElement(recharts_1.BarChart, { data: carTireChartData, margin: { top: 4, right: 8, left: -14, bottom: 0 } },
+                                        React.createElement(recharts_1.CartesianGrid, { stroke: "#1f1f1f", strokeDasharray: "3 3" }),
+                                        React.createElement(recharts_1.XAxis, { dataKey: "set", tick: { fill: "#5a5a5a", fontSize: 9, fontFamily: "JetBrains Mono" } }),
+                                        React.createElement(recharts_1.YAxis, { tick: { fill: "#5a5a5a", fontSize: 9, fontFamily: "JetBrains Mono" } }),
+                                        React.createElement(recharts_1.Tooltip, { contentStyle: tooltipStyle, formatter: v => [`${v} ${distUnit(metric)}`, "Distance"] }),
+                                        React.createElement(recharts_1.Bar, { dataKey: "dist", fill: "#ff9500", radius: [2, 2, 0, 0] })))))));
+                })(),
+                tab === "notes" && React.createElement(NotesTasksPanel, { carName: car, userName: userName, isMaster: false, initialTasks: carData.tasks || [], initialNotes: carData.notes || [], onSaveNote: async (note) => {
+                        await updateCar(c => ({ ...c, notes: [...(c.notes || []), note] }));
+                    }, onToggleTask: async (taskId) => {
+                        await updateCar(c => ({
+                            ...c,
+                            tasks: (c.tasks || []).map(t => t.id === taskId
+                                ? { ...t, done: !t.done, doneBy: !t.done ? userName : null, doneTime: !t.done ? nowLabel() : null }
+                                : t)
+                        }));
+                    } }),
+                React.createElement("button", { className: "btn btn-red", onClick: onLogout, style: { marginTop: 8 } }, "Exit Session"),
+                React.createElement("div", { style: { height: 32 } })))));
+}
+function NotesTasksPanel({ carName, isMaster, readonly = false, onSaveNote, onToggleTask, onAddTask, onDeleteTask, initialTasks, initialNotes, userName }) {
+    const [noteDraft, setNoteDraft] = useState("");
+    const [taskDraft, setTaskDraft] = useState("");
+    const [taskPriority, setTaskPriority] = useState("med");
+    const [noteSaved, setNoteSaved] = useState(false);
+    const [tasks, setTasks] = useState(initialTasks || []);
+    const [notes, setNotes] = useState(initialNotes || []);
+    useEffect(() => {
+        setTasks(initialTasks || []);
+    }, [initialTasks]);
+    useEffect(() => {
+        setNotes(initialNotes || []);
+    }, [initialNotes]);
+    const openTasks = tasks.filter(t => !t.done);
+    const doneTasks = tasks.filter(t => t.done);
+    const displayNotes = [...notes].reverse();
+    const handleSaveNote = async () => {
+        if (readonly || !noteDraft.trim() || !onSaveNote)
+            return;
+        const newNote = { id: makeId("note"), text: noteDraft.trim(), by: userName,
+            time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+            date: new Date().toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" }) };
+        setNotes(prev => [...prev, newNote]);
+        setNoteDraft("");
+        setNoteSaved(true);
+        setTimeout(() => setNoteSaved(false), 2000);
+        try {
+            await onSaveNote(newNote);
+        }
+        catch (e) {
+            console.error("saveNote failed", e);
+        }
+    };
+    const handleAddTask = async () => {
+        if (readonly || !isMaster || !taskDraft.trim() || !onAddTask)
+            return;
+        const newTask = { id: makeId("task"), text: taskDraft.trim(), priority: taskPriority,
+            done: false, doneBy: null, doneTime: null, createdBy: userName };
+        setTasks(prev => [...prev, newTask]);
+        setTaskDraft("");
+        try {
+            await onAddTask(newTask);
+        }
+        catch (e) {
+            console.error("addTask failed", e);
+        }
+    };
+    const handleToggleTask = async (taskId) => {
+        if (readonly || !onToggleTask)
+            return;
+        setTasks(prev => prev.map(t => t.id === taskId
+            ? { ...t, done: !t.done, doneBy: !t.done ? userName : null,
+                doneTime: !t.done ? new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null }
+            : t));
+        try {
+            await onToggleTask(taskId);
+        }
+        catch (e) {
+            console.error("toggleTask failed", e);
+        }
+    };
+    const handleDeleteTask = async (taskId) => {
+        if (readonly || !isMaster || !onDeleteTask)
+            return;
+        setTasks(prev => prev.filter(t => t.id !== taskId));
+        try {
+            await onDeleteTask(taskId);
+        }
+        catch (e) {
+            console.error("deleteTask failed", e);
+        }
+    };
+    const priLabel = { high: "HIGH", med: "MED", low: "LOW" };
+    const priClass = { high: "pri-high", med: "pri-med", low: "pri-low" };
+    return (React.createElement("div", null,
+        React.createElement("div", { className: "sec" },
+            React.createElement("div", { className: "sec-title", style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+                React.createElement("span", null, "Tasks"),
+                React.createElement("span", { style: { fontFamily: "JetBrains Mono", fontSize: 9, color: "var(--grn)" } },
+                    doneTasks.length,
+                    "/",
+                    tasks.length,
+                    " done")),
+            React.createElement("div", { className: "sec-body" },
+                tasks.length === 0 && (React.createElement("div", { style: { textAlign: "center", color: "var(--mut)", fontFamily: "JetBrains Mono", fontSize: 11, padding: "12px 0" } }, "No tasks yet")),
+                openTasks.map(task => (React.createElement("div", { className: "task-row", key: task.id },
+                    React.createElement("div", { className: `task-check ${task.done ? "done" : ""}`, onClick: readonly ? undefined : () => handleToggleTask(task.id), style: readonly ? { cursor: "default" } : undefined }, task.done && React.createElement("span", { style: { color: "#000", fontSize: 12, fontWeight: "bold" } }, "\u2713")),
+                    React.createElement("div", { className: "task-body" },
+                        React.createElement("span", { className: `task-priority ${priClass[task.priority || "med"]}` }, priLabel[task.priority || "med"]),
+                        React.createElement("div", { className: `task-text ${task.done ? "done" : ""}` }, task.text),
+                        React.createElement("div", { className: "note-meta", style: { marginTop: 4 } },
+                            React.createElement("span", null,
+                                "Set by ",
+                                task.createdBy || "Lead"))),
+                    isMaster && onDeleteTask && (React.createElement("button", { onClick: () => handleDeleteTask(task.id), style: { background: "none", border: "none", color: "var(--mut)", cursor: "pointer", fontSize: 14, padding: "0 4px", flexShrink: 0 } }, "\u2715"))))),
+                doneTasks.length > 0 && (React.createElement(React.Fragment, null,
+                    React.createElement("div", { className: "section-divider" },
+                        React.createElement("span", null, "Completed")),
+                    doneTasks.map(task => (React.createElement("div", { className: "task-row", key: task.id, style: { opacity: 0.6 } },
+                        React.createElement("div", { className: `task-check done`, onClick: readonly ? undefined : () => handleToggleTask(task.id), style: readonly ? { cursor: "default" } : undefined },
+                            React.createElement("span", { style: { color: "#000", fontSize: 12, fontWeight: "bold" } }, "\u2713")),
+                        React.createElement("div", { className: "task-body" },
+                            React.createElement("div", { className: `task-text done` }, task.text),
+                            task.doneBy && React.createElement("div", { className: "task-stamp" },
+                                "\u2713 ",
+                                task.doneBy,
+                                " \u00B7 ",
+                                task.doneTime)),
+                        isMaster && onDeleteTask && (React.createElement("button", { onClick: () => handleDeleteTask(task.id), style: { background: "none", border: "none", color: "var(--mut)", cursor: "pointer", fontSize: 14, padding: "0 4px", flexShrink: 0 } }, "\u2715"))))))),
+                isMaster && (React.createElement("div", { style: { marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--b)" } },
+                    React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: "var(--mut)", marginBottom: 8 } }, "Add Task"),
+                    React.createElement("textarea", { className: "notes-area", style: { minHeight: 60 }, value: taskDraft, onChange: e => setTaskDraft(e.target.value), placeholder: "Describe the task\u2026" }),
+                    React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 8 } }, ["high", "med", "low"].map(p => (React.createElement("button", { key: p, onClick: () => setTaskPriority(p), className: `btn btn-sm ${taskPriority === p ? (p === "high" ? "btn-red" : p === "med" ? "btn-org" : "btn-ghost") : "btn-ghost"}`, style: { flex: 1, marginTop: 0, fontSize: 11 } }, priLabel[p])))),
+                    React.createElement("button", { className: "btn btn-grn", style: { marginTop: 8 }, onClick: handleAddTask }, "+ Add Task"))))),
+        React.createElement("div", { className: "sec" },
+            React.createElement("div", { className: "sec-title" }, "Notes"),
+            React.createElement("div", { className: "sec-body" },
+                !readonly && React.createElement(React.Fragment, null,
+                    React.createElement("textarea", { className: "notes-area", value: noteDraft, onChange: e => setNoteDraft(e.target.value), placeholder: "Add a note \u2014 weather, track conditions, driver feedback, setup changes\u2026", rows: 4 }),
+                    React.createElement("button", { className: "btn btn-grn", style: { marginTop: 8 }, onClick: handleSaveNote }, noteSaved ? "✓ Saved" : "Save Note")),
+                notes.length > 0 && (React.createElement("div", { style: { marginTop: 16 } },
+                    React.createElement("div", { className: "section-divider" },
+                        React.createElement("span", null, "Previous Notes")),
+                    displayNotes.map((n, i) => (React.createElement("div", { className: "note-entry", key: n.id || n.at || `${n.by || "note"}-${n.date || ""}-${n.time || ""}-${i}` },
+                        React.createElement("div", { className: "note-meta" },
+                            React.createElement("span", null, n.by),
+                            React.createElement("span", null,
+                                n.time,
+                                " \u00B7 ",
+                                n.date)),
+                        React.createElement("div", { className: "note-text" }, n.text))))))))));
+}
+function CarDetail({ name, carData, config, metric, onBack, readonly, onSaveNote, onToggleTask, onAddTask, onDeleteTask }) {
+    var _a, _b, _c, _d;
+    const [dtab, setDtab] = useState("laps");
+    const laps = carData.laps || [];
+    const tooltipStyle = { background: "#111", border: "1px solid #242424", fontFamily: "JetBrains Mono", fontSize: 11 };
+    const axTick = { fill: "#5a5a5a", fontSize: 9, fontFamily: "JetBrains Mono" };
+    const lapChartData = laps.map((l, i) => ({ lap: `L${i + 1}`, sec: msToSec(l.time), time: msToLabel(l.time) }));
+    const carTireLabels = carData.tireSetLabels || {};
+    const tireChartData = Object.entries(carData.tireSets || {}).map(([k, v]) => ({ set: carTireLabels[k] || k, dist: distVal(v, metric) }));
+    let cumulativeFuel = 0;
+    const fuelChartData = laps.map((l, i) => {
+        cumulativeFuel += l.fuelPerLap || 0;
+        return { lap: `L${i + 1}`, fuel: +fuelVal(cumulativeFuel, metric).toFixed(2) };
+    });
+    const capGal = carData.fuelCapacity || 0;
+    const usedGal = carData.fuelUsed || 0;
+    const remGal = Math.max(0, capGal - usedGal);
+    const remL = remGal * 3.78541;
+    const fuelPct = capGal > 0 ? Math.min(100, (remGal / capGal) * 100) : 0;
+    const fuelBarColor = fuelPct > 40 ? "#00e87a" : fuelPct > 20 ? "#ff9500" : "#ff4020";
+    const lapsLeft = carData.fuelPerLap > 0 ? Math.floor(remGal / carData.fuelPerLap) : null;
+    const isLive = carData.status === "Active" || carData.status === "Racing";
+    return (React.createElement("div", null,
+        React.createElement("div", { className: "detail-hdr" },
+            React.createElement("button", { className: "detail-back", onClick: onBack }, "\u2190 Back"),
+            React.createElement("div", null,
+                React.createElement("div", { className: "detail-car-name" }, ((_a = config.carNames) === null || _a === void 0 ? void 0 : _a[name]) || name),
+                React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 9, color: isLive ? "var(--grn)" : "var(--mut)", letterSpacing: 2 } },
+                    isLive ? "● LIVE" : "IDLE",
+                    " \u00B7 ",
+                    laps.length,
+                    " laps"))),
+        React.createElement("div", { className: "detail-tabs" }, ["laps", "charts", "tires", "fuel", "notes"].map(t => (React.createElement("div", { key: t, className: `detail-tab ${dtab === t ? "on" : ""}`, onClick: () => setDtab(t) }, t)))),
+        React.createElement("div", { className: "wrap", style: { paddingTop: 14 } },
+            dtab === "laps" && React.createElement(React.Fragment, null,
+                React.createElement("div", { className: "sec" },
+                    React.createElement("div", { className: "sec-title" }, "Stats"),
+                    React.createElement("div", { className: "sec-body" }, [
+                        ["Best Lap", React.createElement("span", { style: { color: "var(--acc)", fontFamily: "JetBrains Mono" } }, bestLap(carData))],
+                        ["Total Laps", laps.length],
+                        [`Total ${distUnit(metric)}`, `${distVal(carData.totalMileage || 0, metric)} ${distUnit(metric)}`],
+                        ["Fuel Used", `${fuelVal(usedGal, metric).toFixed(2)} ${fuelUnit(metric)}`],
+                        ["Current Tires", React.createElement("span", { className: "tire-tag" },
+                                "\uD83D\uDD35 ",
+                                ((_b = config.tireSetNames) === null || _b === void 0 ? void 0 : _b[carData.currentTireSet]) || carData.currentTireSet || "—")],
+                        [`${distUnit(metric)} on Set`, `${distVal(((_c = carData.tireSets) === null || _c === void 0 ? void 0 : _c[carData.currentTireSet]) || 0, metric)} ${distUnit(metric)}`],
+                    ].map(([l, v]) => (React.createElement("div", { className: "stat-row", key: l },
+                        React.createElement("span", { className: "stat-lbl" }, l),
+                        React.createElement("span", { className: "stat-val" }, v)))))),
+                laps.length > 0 && (React.createElement("div", { className: "sec" },
+                    React.createElement("div", { className: "sec-title" }, "Full Lap History"),
+                    React.createElement("div", { className: "sec-body" },
+                        React.createElement("div", { className: "lap-scroll", style: { maxHeight: 320 } }, [...laps].reverse().map((l, i) => {
+                            const isBest = msToLabel(l.time) === bestLap(carData);
+                            return (React.createElement("div", { className: "lap-row", key: i },
+                                React.createElement("span", { className: "lap-num" },
+                                    "L",
+                                    laps.length - i),
+                                React.createElement("span", { className: `lap-time ${isBest ? "lap-best" : ""}` },
+                                    msToLabel(l.time),
+                                    isBest ? " ●" : ""),
+                                React.createElement("div", { className: "lap-meta" },
+                                    React.createElement("div", null, l.timeOfDay || "—"),
+                                    React.createElement("div", { style: { color: "var(--mut2)" } }, l.date || ""))));
+                        })))))),
+            dtab === "charts" && React.createElement(React.Fragment, null,
+                React.createElement("div", { className: "sec" },
+                    React.createElement("div", { className: "sec-title" }, "Lap Times"),
+                    React.createElement("div", { className: "chart-wrap", style: { paddingTop: 10 } }, lapChartData.length < 2
+                        ? React.createElement("div", { style: { textAlign: "center", color: "var(--mut)", fontFamily: "JetBrains Mono", fontSize: 11, padding: 24 } }, "Need 2+ laps")
+                        : React.createElement(recharts_1.ResponsiveContainer, { width: "100%", height: 170 },
+                            React.createElement(recharts_1.LineChart, { data: lapChartData, margin: { top: 4, right: 12, left: -10, bottom: 0 } },
+                                React.createElement(recharts_1.CartesianGrid, { stroke: "#1f1f1f", strokeDasharray: "3 3" }),
+                                React.createElement(recharts_1.XAxis, { dataKey: "lap", tick: axTick }),
+                                React.createElement(recharts_1.YAxis, { tick: axTick, domain: ["auto", "auto"] }),
+                                React.createElement(recharts_1.Tooltip, { contentStyle: tooltipStyle, formatter: (v, n, p) => [p.payload.time, "Lap"], labelStyle: { color: "var(--acc)" } }),
+                                React.createElement(recharts_1.Line, { type: "monotone", dataKey: "sec", stroke: "#e8ff00", strokeWidth: 2, dot: { fill: "#e8ff00", r: 3 }, activeDot: { r: 5 } }))))),
+                React.createElement("div", { className: "sec" },
+                    React.createElement("div", { className: "sec-title" },
+                        "Cumulative Fuel (",
+                        fuelUnit(metric),
+                        ")"),
+                    React.createElement("div", { className: "chart-wrap", style: { paddingTop: 10 } }, fuelChartData.filter(d => d.fuel > 0).length === 0
+                        ? React.createElement("div", { style: { textAlign: "center", color: "var(--mut)", fontFamily: "JetBrains Mono", fontSize: 11, padding: 24 } }, "No fuel data yet")
+                        : React.createElement(recharts_1.ResponsiveContainer, { width: "100%", height: 150 },
+                            React.createElement(recharts_1.LineChart, { data: fuelChartData, margin: { top: 4, right: 12, left: -10, bottom: 0 } },
+                                React.createElement(recharts_1.CartesianGrid, { stroke: "#1f1f1f", strokeDasharray: "3 3" }),
+                                React.createElement(recharts_1.XAxis, { dataKey: "lap", tick: axTick }),
+                                React.createElement(recharts_1.YAxis, { tick: axTick }),
+                                React.createElement(recharts_1.Tooltip, { contentStyle: tooltipStyle, formatter: v => [`${v} ${fuelUnit(metric)}`, "Fuel"], labelStyle: { color: "var(--blu)" } }),
+                                React.createElement(recharts_1.Line, { type: "monotone", dataKey: "fuel", stroke: "#00b4ff", strokeWidth: 2, dot: { fill: "#00b4ff", r: 3 }, activeDot: { r: 5 } }))))),
+                React.createElement("div", { className: "sec" },
+                    React.createElement("div", { className: "sec-title" },
+                        "Tire ",
+                        distUnit(metric),
+                        " by Set"),
+                    React.createElement("div", { className: "chart-wrap", style: { paddingTop: 10 } }, tireChartData.filter(d => d.dist > 0).length === 0
+                        ? React.createElement("div", { style: { textAlign: "center", color: "var(--mut)", fontFamily: "JetBrains Mono", fontSize: 11, padding: 24 } }, "No tire data yet")
+                        : React.createElement(recharts_1.ResponsiveContainer, { width: "100%", height: 150 },
+                            React.createElement(recharts_1.BarChart, { data: tireChartData, margin: { top: 4, right: 12, left: -10, bottom: 0 } },
+                                React.createElement(recharts_1.CartesianGrid, { stroke: "#1f1f1f", strokeDasharray: "3 3" }),
+                                React.createElement(recharts_1.XAxis, { dataKey: "set", tick: axTick }),
+                                React.createElement(recharts_1.YAxis, { tick: axTick }),
+                                React.createElement(recharts_1.Tooltip, { contentStyle: tooltipStyle, formatter: v => [`${v} ${distUnit(metric)}`, "Distance"] }),
+                                React.createElement(recharts_1.Bar, { dataKey: "dist", fill: "#ff9500", radius: [2, 2, 0, 0] }))))),
+                React.createElement("div", { className: "sec" },
+                    React.createElement("div", { className: "sec-title" }, "Laps by Time of Day"),
+                    laps.length === 0
+                        ? React.createElement("div", { style: { textAlign: "center", color: "var(--mut)", fontFamily: "JetBrains Mono", fontSize: 11, padding: 24 } }, "No laps yet")
+                        : React.createElement("div", { className: "sec-body" }, laps.map((l, i) => (React.createElement("div", { className: "lap-row", key: i },
+                            React.createElement("span", { className: "lap-num" },
+                                "L",
+                                i + 1),
+                            React.createElement("span", { className: "lap-time" }, msToLabel(l.time)),
+                            React.createElement("div", { className: "lap-meta" },
+                                React.createElement("div", null, l.timeOfDay || "—"),
+                                React.createElement("div", { style: { color: "var(--mut2)" } }, l.date || "")))))))),
+            dtab === "tires" && React.createElement(React.Fragment, null,
+                React.createElement("div", { className: "sec" },
+                    React.createElement("div", { className: "sec-title" }, "Current Set"),
+                    React.createElement("div", { className: "sec-body" },
+                        React.createElement("div", { className: "stat-row" },
+                            React.createElement("span", { className: "stat-lbl" }, "Set"),
+                            React.createElement("span", { className: "tire-tag" },
+                                "\uD83D\uDD35 ",
+                                carTireLabels[carData.currentTireSet] || carData.currentTireSet || "—")),
+                        React.createElement("div", { className: "stat-row" },
+                            React.createElement("span", { className: "stat-lbl" },
+                                distUnit(metric),
+                                " on Set"),
+                            React.createElement("span", { className: "stat-val" },
+                                distVal(((_d = carData.tireSets) === null || _d === void 0 ? void 0 : _d[carData.currentTireSet]) || 0, metric),
+                                " ",
+                                distUnit(metric))))),
+                tireChartData.length > 0 && (React.createElement("div", { className: "sec" },
+                    React.createElement("div", { className: "sec-title" }, "All Sets"),
+                    React.createElement("div", { className: "sec-body" }, Object.entries(carData.tireSets || {}).map(([set, mi]) => (React.createElement("div", { className: "stat-row", key: set },
+                        React.createElement("span", { className: "tire-tag" },
+                            "\uD83D\uDD35 ",
+                            carTireLabels[set] || set,
+                            set === carData.currentTireSet ? " ●" : ""),
+                        React.createElement("span", { className: "stat-val" },
+                            distVal(mi, metric),
+                            " ",
+                            distUnit(metric)))))),
+                    React.createElement("div", { className: "chart-wrap", style: { paddingTop: 4 } },
+                        React.createElement(recharts_1.ResponsiveContainer, { width: "100%", height: 130 },
+                            React.createElement(recharts_1.BarChart, { data: tireChartData, margin: { top: 4, right: 8, left: -14, bottom: 0 } },
+                                React.createElement(recharts_1.CartesianGrid, { stroke: "#1f1f1f", strokeDasharray: "3 3" }),
+                                React.createElement(recharts_1.XAxis, { dataKey: "set", tick: { fill: "#5a5a5a", fontSize: 9, fontFamily: "JetBrains Mono" } }),
+                                React.createElement(recharts_1.YAxis, { tick: { fill: "#5a5a5a", fontSize: 9, fontFamily: "JetBrains Mono" } }),
+                                React.createElement(recharts_1.Tooltip, { contentStyle: tooltipStyle, formatter: v => [`${v} ${distUnit(metric)}`, "Distance"] }),
+                                React.createElement(recharts_1.Bar, { dataKey: "dist", fill: "#ff9500", radius: [2, 2, 0, 0] }))))))),
+            dtab === "fuel" && (React.createElement("div", { className: "sec" },
+                React.createElement("div", { className: "sec-title" }, "Fuel Status"),
+                React.createElement("div", { className: "sec-body" },
+                    React.createElement("div", { className: "fuel-mini" },
+                        React.createElement("span", { className: "fuel-mini-lbl" }, "Tank Size"),
+                        React.createElement("span", { className: "fuel-mini-val" }, capGal > 0 ? `${fuelVal(capGal, metric).toFixed(1)} ${fuelUnit(metric)}` : "—")),
+                    React.createElement("div", { className: "fuel-mini" },
+                        React.createElement("span", { className: "fuel-mini-lbl" }, "Remaining"),
+                        React.createElement("span", { className: "fuel-mini-val", style: { color: fuelBarColor } },
+                            fuelVal(remGal, metric).toFixed(1),
+                            " ",
+                            fuelUnit(metric))),
+                    React.createElement("div", { className: "fuel-mini" },
+                        React.createElement("span", { className: "fuel-mini-lbl" }, "Used"),
+                        React.createElement("span", { className: "fuel-mini-val" },
+                            fuelVal(usedGal, metric).toFixed(1),
+                            " ",
+                            fuelUnit(metric))),
+                    React.createElement("div", { className: "fuel-mini" },
+                        React.createElement("span", { className: "fuel-mini-lbl" }, "Burn / Lap"),
+                        React.createElement("span", { className: "fuel-mini-val" },
+                            fuelVal(carData.fuelPerLap || 0, metric).toFixed(2),
+                            " ",
+                            fuelUnit(metric))),
+                    React.createElement("div", { className: "fuel-mini" },
+                        React.createElement("span", { className: "fuel-mini-lbl" }, "Est. Laps Left"),
+                        React.createElement("span", { className: "fuel-mini-val", style: { color: "var(--acc)" } }, lapsLeft !== null ? lapsLeft : "—")),
+                    capGal > 0 && React.createElement(React.Fragment, null,
+                        React.createElement("div", { className: "fuel-bar-track", style: { marginTop: 8 } },
+                            React.createElement("div", { className: "fuel-bar-fill", style: { width: `${fuelPct}%`, background: fuelBarColor } })),
+                        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginTop: 4 } },
+                            React.createElement("span", { style: { fontFamily: "JetBrains Mono", fontSize: 9, color: "var(--mut)" } }, "0"),
+                            React.createElement("span", { style: { fontFamily: "JetBrains Mono", fontSize: 9, color: "var(--mut)" } },
+                                fuelVal(capGal, metric).toFixed(0),
+                                " ",
+                                fuelUnit(metric))))))),
+            dtab === "notes" && React.createElement(NotesTasksPanel, { carName: name, readonly: readonly, userName: readonly ? "Overview" : "Lead", isMaster: !readonly, initialTasks: carData.tasks || [], initialNotes: carData.notes || [], onSaveNote: onSaveNote || (() => { }), onToggleTask: onToggleTask || (() => { }), onAddTask: onAddTask || null, onDeleteTask: onDeleteTask || null }),
+            React.createElement("div", { style: { height: 32 } }))));
+}
+function OverviewView({ data, users, onLogout, circuit, metric, config, updateCarData, simRunning }) {
+    const activeCarsInFleet = config.activeCars || DEFAULT_CARS;
+    const cars = Object.entries(data || {}).filter(([name]) => activeCarsInFleet.includes(name));
+    const recentUsers = Object.entries(users).filter(([, u]) => Date.now() - u.lastSeen < 300000);
+    const tooltipStyle = { background: "#111", border: "1px solid #242424", fontFamily: "JetBrains Mono", fontSize: 11 };
+    const axTick = { fill: "#5a5a5a", fontSize: 9, fontFamily: "JetBrains Mono" };
+    const [tab, setTab] = useState("cars");
+    const [selectedCar, setSelectedCar] = useState(null);
+    return (React.createElement(React.Fragment, null,
+        React.createElement("style", null, G),
+        React.createElement("div", null,
+            React.createElement("div", { className: "hdr" },
+                React.createElement("div", { className: "hdr-title" },
+                    "PITWALL ",
+                    React.createElement("span", { style: { fontFamily: "JetBrains Mono", fontSize: 9, letterSpacing: 2, color: "var(--blu)" } }, "DEMO \u00B7 OVERVIEW")),
+                React.createElement("div", { className: "hdr-right" },
+                    React.createElement("span", { style: { display: "flex", alignItems: "center", gap: 5, fontFamily: "JetBrains Mono", fontSize: 10, color: "var(--grn)" } },
+                        React.createElement("span", { className: "live-dot" }),
+                        simRunning ? "SIM RUNNING" : "DEMO READY"),
+                    React.createElement("button", { className: "exit-btn", onClick: onLogout }, "Exit"))),
+            React.createElement("div", { className: "tabs" }, ["cars", "tires", "fuel", "summary"].map(t => (React.createElement("div", { key: t, className: `tab ${tab === t ? "on" : ""}`, onClick: () => setTab(t) }, t)))),
+            React.createElement("div", { className: "master-wrap" },
+                tab === "cars" && (selectedCar
+                    ? React.createElement(CarDetail, { name: selectedCar, carData: (data === null || data === void 0 ? void 0 : data[selectedCar]) || {}, config: config, metric: metric, onBack: () => setSelectedCar(null), readonly: true })
+                    : React.createElement("div", { className: "master-grid" }, cars.map(([name, c]) => {
+                        var _a, _b, _c, _d, _e;
+                        const isLive = c.status === "Active" || c.status === "Racing";
+                        const tireM = (((_a = c.tireSets) === null || _a === void 0 ? void 0 : _a[c.currentTireSet]) || 0).toFixed(2);
+                        return (React.createElement("div", { className: `car-card ${isLive ? "live" : ""}`, key: name, onClick: () => setSelectedCar(name) },
+                            React.createElement("div", { className: "car-card-hdr" },
+                                React.createElement("div", { className: "car-card-name" }, ((_b = config.carNames) === null || _b === void 0 ? void 0 : _b[name]) || name),
+                                React.createElement("span", { className: `badge ${isLive ? "badge-grn" : "badge-gray"}` }, isLive ? React.createElement(React.Fragment, null,
+                                    React.createElement("span", { className: "pulse" }),
+                                    "LIVE") : "IDLE")),
+                            React.createElement("div", { className: "car-card-body" },
+                                React.createElement("div", { className: "mini-grid" },
+                                    React.createElement("div", null,
+                                        React.createElement("div", { className: "mini-stat-lbl" }, "Laps"),
+                                        React.createElement("div", { className: "mini-stat-val" }, ((_c = c.laps) === null || _c === void 0 ? void 0 : _c.length) || 0)),
+                                    React.createElement("div", null,
+                                        React.createElement("div", { className: "mini-stat-lbl" }, "Best"),
+                                        React.createElement("div", { className: "mini-stat-val", style: { color: "var(--acc)", fontSize: 14 } }, bestLap(c))),
+                                    React.createElement("div", null,
+                                        React.createElement("div", { className: "mini-stat-lbl" }, distUnit(metric)),
+                                        React.createElement("div", { className: "mini-stat-val", style: { fontSize: 14 } }, distVal(c.totalMileage || 0, metric).toFixed(1))),
+                                    React.createElement("div", null,
+                                        React.createElement("div", { className: "mini-stat-lbl" },
+                                            "Fuel ",
+                                            fuelUnit(metric)),
+                                        React.createElement("div", { className: "mini-stat-val", style: { fontSize: 14 } }, fuelVal(c.fuelUsed || 0, metric).toFixed(1)))),
+                                React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 } },
+                                    React.createElement("span", { className: "tire-tag" },
+                                        "\uD83D\uDD35 ",
+                                        ((_d = config.tireSetNames) === null || _d === void 0 ? void 0 : _d[c.currentTireSet]) || c.currentTireSet || "—",
+                                        " \u00B7 ",
+                                        distVal(parseFloat(tireM), metric),
+                                        " ",
+                                        distUnit(metric)),
+                                    React.createElement("span", { className: "time-ago" }, timeAgo(c.lastUpdate))),
+                                ((_e = c.laps) === null || _e === void 0 ? void 0 : _e.length) > 0 && (React.createElement("div", null,
+                                    React.createElement("div", { style: { fontSize: 9, letterSpacing: 2, color: "var(--mut)", fontFamily: "JetBrains Mono", textTransform: "uppercase", marginBottom: 5 } }, "Last 3 \u2014 tap for detail"),
+                                    [...c.laps].reverse().slice(0, 3).map((l, i) => (React.createElement("div", { className: "lap-row", key: i },
+                                        React.createElement("span", { className: "lap-num" },
+                                            "L",
+                                            c.laps.length - i),
+                                        React.createElement("span", { className: "lap-time" }, bestLap(c) === msToLabel(l.time) ? React.createElement("span", { className: "lap-best" }, msToLabel(l.time)) : msToLabel(l.time)),
+                                        React.createElement("span", { style: { fontFamily: "JetBrains Mono", fontSize: 10, color: "var(--mut)" } }, l.timeOfDay || "")))))))));
+                    }))),
+                tab === "tires" && (React.createElement("div", null, cars.map(([name, c]) => {
+                    var _a, _b, _c;
+                    return (React.createElement("div", { className: "sec", key: name },
+                        React.createElement("div", { className: "sec-title" },
+                            ((_a = config.carNames) === null || _a === void 0 ? void 0 : _a[name]) || name,
+                            " \u2014 Tires"),
+                        React.createElement("div", { className: "sec-body" },
+                            React.createElement("div", { className: "stat-row" },
+                                React.createElement("span", { className: "stat-lbl" }, "Current Set"),
+                                React.createElement("span", { className: "tire-tag" },
+                                    "\uD83D\uDD35 ",
+                                    ((_b = config.tireSetNames) === null || _b === void 0 ? void 0 : _b[c.currentTireSet]) || c.currentTireSet || "—")),
+                            React.createElement("div", { className: "stat-row" },
+                                React.createElement("span", { className: "stat-lbl" },
+                                    distUnit(metric),
+                                    " on Set"),
+                                React.createElement("span", { className: "stat-val" },
+                                    distVal(((_c = c.tireSets) === null || _c === void 0 ? void 0 : _c[c.currentTireSet]) || 0, metric),
+                                    " ",
+                                    distUnit(metric))),
+                            Object.entries(c.tireSets || {}).filter(([k]) => k !== c.currentTireSet && c.tireSets[k] > 0).map(([set, mi]) => {
+                                var _a;
+                                return (React.createElement("div", { className: "stat-row", key: set },
+                                    React.createElement("span", { className: "stat-lbl" }, ((_a = config.tireSetNames) === null || _a === void 0 ? void 0 : _a[set]) || set),
+                                    React.createElement("span", { className: "stat-val", style: { color: "var(--mut)" } },
+                                        distVal(mi, metric),
+                                        " ",
+                                        distUnit(metric))));
+                            }))));
+                }))),
+                tab === "fuel" && (React.createElement("div", null, cars.map(([name, c]) => {
+                    var _a;
+                    const capGal = c.fuelCapacity || 0;
+                    const usedGal = c.fuelUsed || 0;
+                    const remGal = Math.max(0, capGal - usedGal);
+                    const remL = remGal * 3.78541;
+                    const pct = capGal > 0 ? Math.min(100, (remGal / capGal) * 100) : 0;
+                    const barColor = pct > 40 ? "#00e87a" : pct > 20 ? "#ff9500" : "#ff4020";
+                    const lapsLeft = c.fuelPerLap > 0 ? Math.floor(remGal / c.fuelPerLap) : null;
+                    return (React.createElement("div", { className: "sec", key: name },
+                        React.createElement("div", { className: "sec-title" },
+                            ((_a = config.carNames) === null || _a === void 0 ? void 0 : _a[name]) || name,
+                            " \u2014 Fuel"),
+                        React.createElement("div", { className: "sec-body" },
+                            React.createElement("div", { className: "fuel-mini" },
+                                React.createElement("span", { className: "fuel-mini-lbl" }, "Remaining"),
+                                React.createElement("span", { className: "fuel-mini-val", style: { color: barColor } },
+                                    fuelVal(remGal, metric).toFixed(1),
+                                    " ",
+                                    fuelUnit(metric))),
+                            React.createElement("div", { className: "fuel-mini" },
+                                React.createElement("span", { className: "fuel-mini-lbl" }, "Used"),
+                                React.createElement("span", { className: "fuel-mini-val" },
+                                    fuelVal(usedGal, metric).toFixed(1),
+                                    " ",
+                                    fuelUnit(metric))),
+                            React.createElement("div", { className: "fuel-mini" },
+                                React.createElement("span", { className: "fuel-mini-lbl" }, "Burn / Lap"),
+                                React.createElement("span", { className: "fuel-mini-val" },
+                                    fuelVal(c.fuelPerLap || 0, metric).toFixed(2),
+                                    " ",
+                                    fuelUnit(metric))),
+                            React.createElement("div", { className: "fuel-mini" },
+                                React.createElement("span", { className: "fuel-mini-lbl" }, "Est. Laps Left"),
+                                React.createElement("span", { className: "fuel-mini-val", style: { color: "var(--acc)" } }, lapsLeft !== null ? lapsLeft : "—")),
+                            capGal > 0 && React.createElement(React.Fragment, null,
+                                React.createElement("div", { className: "fuel-bar-track", style: { marginTop: 8 } },
+                                    React.createElement("div", { className: "fuel-bar-fill", style: { width: `${pct}%`, background: barColor } })),
+                                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginTop: 4 } },
+                                    React.createElement("span", { style: { fontFamily: "JetBrains Mono", fontSize: 9, color: "var(--mut)" } }, "0"),
+                                    React.createElement("span", { style: { fontFamily: "JetBrains Mono", fontSize: 9, color: "var(--mut)" } },
+                                        fuelVal(capGal, metric).toFixed(0),
+                                        " ",
+                                        fuelUnit(metric)))))));
+                }))),
+                tab === "summary" && React.createElement(React.Fragment, null,
+                    React.createElement("div", { className: "summary-bar" },
+                        React.createElement("div", { className: "sum-cell" },
+                            React.createElement("div", { className: "sum-val" }, cars.filter(([, c]) => c.status === "Active" || c.status === "Racing").length),
+                            React.createElement("div", { className: "sum-lbl" }, "Active")),
+                        React.createElement("div", { className: "sum-cell" },
+                            React.createElement("div", { className: "sum-val" }, cars.reduce((s, [, c]) => { var _a; return s + (((_a = c.laps) === null || _a === void 0 ? void 0 : _a.length) || 0); }, 0)),
+                            React.createElement("div", { className: "sum-lbl" }, "Laps")),
+                        React.createElement("div", { className: "sum-cell" },
+                            React.createElement("div", { className: "sum-val" }, fuelVal(cars.reduce((s, [, c]) => s + (c.fuelUsed || 0), 0), metric).toFixed(1)),
+                            React.createElement("div", { className: "sum-lbl" },
+                                "Fuel ",
+                                fuelUnit(metric))),
+                        React.createElement("div", { className: "sum-cell" },
+                            React.createElement("div", { className: "sum-val" }, distVal(cars.reduce((s, [, c]) => s + (c.totalMileage || 0), 0), metric).toFixed(0)),
+                            React.createElement("div", { className: "sum-lbl" }, distUnit(metric)))),
+                    React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" }, "Lap Leaders"),
+                        React.createElement("div", { className: "sec-body" }, [...cars].sort((a, b) => { var _a, _b; return (((_a = b[1].laps) === null || _a === void 0 ? void 0 : _a.length) || 0) - (((_b = a[1].laps) === null || _b === void 0 ? void 0 : _b.length) || 0); }).map(([name, c]) => {
+                            var _a, _b;
+                            return (React.createElement("div", { className: "stat-row", key: name },
+                                React.createElement("span", { className: "stat-lbl" }, ((_a = config.carNames) === null || _a === void 0 ? void 0 : _a[name]) || name),
+                                React.createElement("div", { style: { display: "flex", gap: 14, alignItems: "center" } },
+                                    React.createElement("span", { className: "stat-val" },
+                                        ((_b = c.laps) === null || _b === void 0 ? void 0 : _b.length) || 0,
+                                        " laps"),
+                                    React.createElement("span", { style: { fontFamily: "JetBrains Mono", fontSize: 12, color: "var(--acc)" } }, bestLap(c)))));
+                        }))),
+                    recentUsers.length > 0 && (React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" }, "Active Crew"),
+                        React.createElement("div", { className: "users-row" }, recentUsers.map(([name, u]) => { var _a; return React.createElement("div", { key: name, className: "user-pill" },
+                            "\u25CF ",
+                            name,
+                            " \u2192 ",
+                            ((_a = config.carNames) === null || _a === void 0 ? void 0 : _a[u.car]) || u.car); })))))))));
+}
+function MasterView({ data, users, onLogout, tab, setTab, circuit, metric, config, updateConfig, updateCarData, loadDemoData, clearDemoData, simRunning, stopSimulation }) {
+    var _a, _b;
+    const activeCarsInFleet = config.activeCars || DEFAULT_CARS;
+    const cars = Object.entries(data || {}).filter(([name]) => activeCarsInFleet.includes(name));
+    const activeCars = cars.filter(([, c]) => c.status === "Active" || c.status === "Racing");
+    const totalLapsAll = cars.reduce((s, [, c]) => { var _a; return s + (((_a = c.laps) === null || _a === void 0 ? void 0 : _a.length) || 0); }, 0);
+    const totalFuel = cars.reduce((s, [, c]) => s + (c.fuelUsed || 0), 0);
+    const totalMiles = cars.reduce((s, [, c]) => s + (c.totalMileage || 0), 0);
+    const recentUsers = Object.entries(users).filter(([, u]) => Date.now() - u.lastSeen < 300000);
+    const tooltipStyle = { background: "#111", border: "1px solid #242424", fontFamily: "JetBrains Mono", fontSize: 11 };
+    const axTick = { fill: "#5a5a5a", fontSize: 9, fontFamily: "JetBrains Mono" };
+    const [selectedCar, setSelectedCar] = useState(null);
+    const [carDrafts, setCarDrafts] = useState(() => DEFAULT_CARS.reduce((a, k) => ({ ...a, [k]: "" }), {}));
+    const [settingsSaved, setSettingsSaved] = useState(false);
+    const saveAllSettings = async () => {
+        const newCarNames = { ...(config.carNames || {}) };
+        DEFAULT_CARS.forEach(k => { if (carDrafts[k] && carDrafts[k].trim())
+            newCarNames[k] = carDrafts[k].trim(); });
+        await updateConfig(cfg => ({ ...cfg, carNames: newCarNames }));
+        setCarDrafts(DEFAULT_CARS.reduce((a, k) => ({ ...a, [k]: "" }), {}));
+        setSettingsSaved(true);
+        setTimeout(() => setSettingsSaved(false), 2000);
+    };
+    return (React.createElement(React.Fragment, null,
+        React.createElement("style", null, G),
+        React.createElement("div", null,
+            React.createElement("div", { className: "hdr" },
+                React.createElement("div", { className: "hdr-title" },
+                    "PITWALL ",
+                    React.createElement("span", { style: { fontFamily: "JetBrains Mono", fontSize: 9, letterSpacing: 2, color: "var(--blu)" } }, "DEMO \u00B7 LEAD")),
+                React.createElement("div", { className: "hdr-right" },
+                    React.createElement("span", { style: { display: "flex", alignItems: "center", gap: 5, fontFamily: "JetBrains Mono", fontSize: 10, color: "var(--grn)" } },
+                        React.createElement("span", { className: "live-dot" }),
+                        simRunning ? "SIM RUNNING" : "DEMO READY"),
+                    React.createElement("button", { className: "exit-btn", onClick: onLogout }, "Exit"))),
+            React.createElement("div", { className: "tabs" }, ["cars", "charts", "summary", "settings"].map(t => (React.createElement("div", { key: t, className: `tab ${tab === t ? "on" : ""}`, onClick: () => setTab(t) }, t)))),
+            React.createElement("div", { className: "master-wrap" },
+                tab === "cars" && (selectedCar
+                    ? React.createElement(CarDetail, { name: selectedCar, carData: (data === null || data === void 0 ? void 0 : data[selectedCar]) || {}, config: config, metric: metric, onBack: () => setSelectedCar(null), onSaveNote: async (note) => updateCarData(selectedCar, c => ({ ...c, notes: [...(c.notes || []), note] })), onToggleTask: async (taskId) => updateCarData(selectedCar, c => ({ ...c, tasks: (c.tasks || []).map(t => t.id === taskId ? { ...t, done: !t.done, doneBy: !t.done ? "Lead" : null, doneTime: !t.done ? nowLabel() : null } : t) })), onAddTask: async (task) => updateCarData(selectedCar, c => ({ ...c, tasks: [...(c.tasks || []), task] })), onDeleteTask: async (taskId) => updateCarData(selectedCar, c => ({ ...c, tasks: (c.tasks || []).filter(t => t.id !== taskId) })) })
+                    : React.createElement("div", { className: "master-grid" }, cars.map(([name, c]) => {
+                        var _a, _b, _c, _d, _e;
+                        const isLive = c.status === "Active" || c.status === "Racing";
+                        const tireM = (((_a = c.tireSets) === null || _a === void 0 ? void 0 : _a[c.currentTireSet]) || 0).toFixed(2);
+                        return (React.createElement("div", { className: `car-card ${isLive ? "live" : ""}`, key: name, onClick: () => setSelectedCar(name) },
+                            React.createElement("div", { className: "car-card-hdr" },
+                                React.createElement("div", { className: "car-card-name" }, ((_b = config.carNames) === null || _b === void 0 ? void 0 : _b[name]) || name),
+                                React.createElement("span", { className: `badge ${isLive ? "badge-grn" : "badge-gray"}` }, isLive ? React.createElement(React.Fragment, null,
+                                    React.createElement("span", { className: "pulse" }),
+                                    "LIVE") : "IDLE")),
+                            React.createElement("div", { className: "car-card-body" },
+                                React.createElement("div", { className: "mini-grid" },
+                                    React.createElement("div", null,
+                                        React.createElement("div", { className: "mini-stat-lbl" }, "Laps"),
+                                        React.createElement("div", { className: "mini-stat-val" }, ((_c = c.laps) === null || _c === void 0 ? void 0 : _c.length) || 0)),
+                                    React.createElement("div", null,
+                                        React.createElement("div", { className: "mini-stat-lbl" }, "Best"),
+                                        React.createElement("div", { className: "mini-stat-val", style: { color: "var(--acc)", fontSize: 14 } }, bestLap(c))),
+                                    React.createElement("div", null,
+                                        React.createElement("div", { className: "mini-stat-lbl" }, distUnit(metric)),
+                                        React.createElement("div", { className: "mini-stat-val", style: { fontSize: 14 } }, distVal(c.totalMileage || 0, metric).toFixed(1))),
+                                    React.createElement("div", null,
+                                        React.createElement("div", { className: "mini-stat-lbl" },
+                                            "Fuel ",
+                                            fuelUnit(metric)),
+                                        React.createElement("div", { className: "mini-stat-val", style: { fontSize: 14 } }, fuelVal(c.fuelUsed || 0, metric).toFixed(1)))),
+                                React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 } },
+                                    React.createElement("span", { className: "tire-tag" },
+                                        "\uD83D\uDD35 ",
+                                        ((_d = config.tireSetNames) === null || _d === void 0 ? void 0 : _d[c.currentTireSet]) || c.currentTireSet || "—",
+                                        " \u00B7 ",
+                                        distVal(parseFloat(tireM), metric),
+                                        " ",
+                                        distUnit(metric)),
+                                    React.createElement("span", { className: "time-ago" }, timeAgo(c.lastUpdate))),
+                                ((_e = c.laps) === null || _e === void 0 ? void 0 : _e.length) > 0 && (React.createElement("div", null,
+                                    React.createElement("div", { style: { fontSize: 9, letterSpacing: 2, color: "var(--mut)", fontFamily: "JetBrains Mono", textTransform: "uppercase", marginBottom: 5 } }, "Last 3 \u2014 tap for full detail"),
+                                    [...c.laps].reverse().slice(0, 3).map((l, i) => (React.createElement("div", { className: "lap-row", key: i },
+                                        React.createElement("span", { className: "lap-num" },
+                                            "L",
+                                            c.laps.length - i),
+                                        React.createElement("span", { className: "lap-time" }, msToLabel(l.time)),
+                                        React.createElement("span", { style: { fontFamily: "JetBrains Mono", fontSize: 10, color: "var(--mut)" } }, l.timeOfDay || l.by || "")))))))));
+                    }))),
+                tab === "charts" && (selectedCar
+                    ? React.createElement(CarDetail, { name: selectedCar, carData: (data === null || data === void 0 ? void 0 : data[selectedCar]) || {}, config: config, metric: metric, onBack: () => setSelectedCar(null), onSaveNote: async (note) => updateCarData(selectedCar, c => ({ ...c, notes: [...(c.notes || []), note] })), onToggleTask: async (taskId) => updateCarData(selectedCar, c => ({ ...c, tasks: (c.tasks || []).map(t => t.id === taskId ? { ...t, done: !t.done, doneBy: !t.done ? "Lead" : null, doneTime: !t.done ? nowLabel() : null } : t) })), onAddTask: async (task) => updateCarData(selectedCar, c => ({ ...c, tasks: [...(c.tasks || []), task] })), onDeleteTask: async (taskId) => updateCarData(selectedCar, c => ({ ...c, tasks: (c.tasks || []).filter(t => t.id !== taskId) })) })
+                    : React.createElement("div", null,
+                        React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 10, color: "var(--mut)", letterSpacing: 2, textTransform: "uppercase", padding: "12px 14px 4px" } }, "Tap a car to see its charts"),
+                        cars.map(([name, c]) => {
+                            var _a, _b;
+                            const isLive = c.status === "Active" || c.status === "Racing";
+                            const cd = (c.laps || []).map((l, i) => ({ lap: `L${i + 1}`, sec: msToSec(l.time), time: msToLabel(l.time) }));
+                            return (React.createElement("div", { className: "sec", key: name, onClick: () => setSelectedCar(name), style: { cursor: "pointer" } },
+                                React.createElement("div", { className: "sec-title", style: { display: "flex", justifyContent: "space-between" } },
+                                    React.createElement("span", null, ((_a = config.carNames) === null || _a === void 0 ? void 0 : _a[name]) || name),
+                                    React.createElement("span", { style: { color: isLive ? "var(--grn)" : "var(--mut)" } },
+                                        isLive ? "● LIVE" : "IDLE",
+                                        " \u00B7 ",
+                                        ((_b = c.laps) === null || _b === void 0 ? void 0 : _b.length) || 0,
+                                        " laps \u2192")),
+                                cd.length >= 2
+                                    ? React.createElement("div", { className: "chart-wrap", style: { paddingTop: 8 } },
+                                        React.createElement(recharts_1.ResponsiveContainer, { width: "100%", height: 100 },
+                                            React.createElement(recharts_1.LineChart, { data: cd, margin: { top: 4, right: 12, left: -10, bottom: 0 } },
+                                                React.createElement(recharts_1.XAxis, { dataKey: "lap", tick: axTick }),
+                                                React.createElement(recharts_1.YAxis, { tick: axTick, domain: ["auto", "auto"], hide: true }),
+                                                React.createElement(recharts_1.Tooltip, { contentStyle: tooltipStyle, formatter: (v, n, p) => [p.payload.time, "Lap"], labelStyle: { color: "#e8ff00" } }),
+                                                React.createElement(recharts_1.Line, { type: "monotone", dataKey: "sec", stroke: "#e8ff00", strokeWidth: 2, dot: false }))))
+                                    : React.createElement("div", { style: { textAlign: "center", color: "var(--mut)", fontFamily: "JetBrains Mono", fontSize: 10, padding: "12px 0" } }, "No laps yet")));
+                        }))),
+                tab === "summary" && React.createElement(React.Fragment, null,
+                    React.createElement("div", { className: "summary-bar" },
+                        React.createElement("div", { className: "sum-cell" },
+                            React.createElement("div", { className: "sum-val" }, activeCars.length),
+                            React.createElement("div", { className: "sum-lbl" }, "Active")),
+                        React.createElement("div", { className: "sum-cell" },
+                            React.createElement("div", { className: "sum-val" }, totalLapsAll),
+                            React.createElement("div", { className: "sum-lbl" }, "Laps")),
+                        React.createElement("div", { className: "sum-cell" },
+                            React.createElement("div", { className: "sum-val" }, fuelVal(totalFuel, metric).toFixed(1)),
+                            React.createElement("div", { className: "sum-lbl" },
+                                "Fuel ",
+                                fuelUnit(metric))),
+                        React.createElement("div", { className: "sum-cell" },
+                            React.createElement("div", { className: "sum-val" }, distVal(totalMiles, metric).toFixed(0)),
+                            React.createElement("div", { className: "sum-lbl" }, distUnit(metric)))),
+                    React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" }, "Lap Leaders"),
+                        React.createElement("div", { className: "sec-body" }, [...cars].sort((a, b) => { var _a, _b; return (((_a = b[1].laps) === null || _a === void 0 ? void 0 : _a.length) || 0) - (((_b = a[1].laps) === null || _b === void 0 ? void 0 : _b.length) || 0); }).map(([name, c]) => {
+                            var _a, _b;
+                            return (React.createElement("div", { className: "stat-row", key: name },
+                                React.createElement("span", { className: "stat-lbl" }, ((_a = config.carNames) === null || _a === void 0 ? void 0 : _a[name]) || name),
+                                React.createElement("div", { style: { display: "flex", gap: 14, alignItems: "center" } },
+                                    React.createElement("span", { className: "stat-val" },
+                                        ((_b = c.laps) === null || _b === void 0 ? void 0 : _b.length) || 0,
+                                        " laps"),
+                                    React.createElement("span", { style: { fontFamily: "JetBrains Mono", fontSize: 12, color: "var(--acc)" } }, bestLap(c)))));
+                        }))),
+                    React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" }, "Circuit Info"),
+                        React.createElement("div", { className: "sec-body" },
+                            React.createElement("div", { className: "stat-row" },
+                                React.createElement("span", { className: "stat-lbl" }, "Track"),
+                                React.createElement("span", { className: "stat-val" }, circuit.name)),
+                            React.createElement("div", { className: "stat-row" },
+                                React.createElement("span", { className: "stat-lbl" }, "Length"),
+                                React.createElement("span", { className: "stat-val" },
+                                    circuitDist(circuit.miles, metric),
+                                    " ",
+                                    distUnit(metric),
+                                    "/lap")),
+                            React.createElement("div", { className: "stat-row" },
+                                React.createElement("span", { className: "stat-lbl" },
+                                    "Fleet ",
+                                    distUnit(metric)),
+                                React.createElement("span", { className: "stat-val" },
+                                    distVal(totalMiles, metric).toFixed(2),
+                                    " ",
+                                    distUnit(metric))))),
+                    recentUsers.length > 0 && (React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" }, "Active Crew"),
+                        React.createElement("div", { className: "users-row" }, recentUsers.map(([name, u]) => React.createElement("div", { key: name, className: "user-pill" },
+                            "\u25CF ",
+                            name,
+                            " \u2192 ",
+                            u.car)))))),
+                tab === "settings" && React.createElement(React.Fragment, null,
+                    settingsSaved && (React.createElement("div", { className: "toast", style: { marginBottom: 12 } }, "\u2713 Settings saved")),
+                    React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" }, "Fleet \u2014 Active Cars"),
+                        React.createElement("div", { className: "sec-body" },
+                            React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 9, color: "var(--mut)", letterSpacing: 2, textTransform: "uppercase", marginBottom: 12 } }, "Toggle which cars appear in dashboards and login"),
+                            DEFAULT_CARS.map(key => {
+                                var _a;
+                                const isActive = (config.activeCars || DEFAULT_CARS).includes(key);
+                                return (React.createElement("div", { key: key, style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--b)" } },
+                                    React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 13, color: isActive ? "var(--txt)" : "var(--mut)" } }, ((_a = config.carNames) === null || _a === void 0 ? void 0 : _a[key]) || key),
+                                    React.createElement("button", { onClick: () => updateConfig(cfg => {
+                                            const current = cfg.activeCars || DEFAULT_CARS;
+                                            if (isActive && current.length <= 1)
+                                                return cfg;
+                                            const updated = isActive
+                                                ? current.filter(c => c !== key)
+                                                : [...current, key].sort((a, b) => DEFAULT_CARS.indexOf(a) - DEFAULT_CARS.indexOf(b));
+                                            return { ...cfg, activeCars: updated };
+                                        }), className: `btn btn-sm ${isActive ? "btn-red" : "btn-grn"}`, style: { marginTop: 0, minWidth: 72 } }, isActive ? "Remove" : "Add")));
+                            }),
+                            React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 10, color: "var(--acc)", letterSpacing: 1, marginTop: 10 } },
+                                (config.activeCars || DEFAULT_CARS).length,
+                                " of ",
+                                DEFAULT_CARS.length,
+                                " cars active"))),
+                    React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" }, "Chassis Numbers"),
+                        React.createElement("div", { className: "sec-body" },
+                            React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 9, color: "var(--mut)", letterSpacing: 2, textTransform: "uppercase", marginBottom: 12 } }, "Type new name \u2014 leave blank to keep current"),
+                            DEFAULT_CARS.map(key => {
+                                var _a, _b;
+                                return (React.createElement("div", { key: key, style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 8 } },
+                                    React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 10, color: "var(--acc)", minWidth: 52, letterSpacing: 1 } }, ((_a = config.carNames) === null || _a === void 0 ? void 0 : _a[key]) || key),
+                                    React.createElement("input", { style: { flex: 1, background: "var(--bg)", border: "1px solid var(--b)", color: "var(--txt)", padding: "7px 10px", fontFamily: "JetBrains Mono", fontSize: 13, borderRadius: 2, outline: "none" }, value: carDrafts[key], onChange: e => setCarDrafts(d => ({ ...d, [key]: e.target.value })), placeholder: ((_b = config.carNames) === null || _b === void 0 ? void 0 : _b[key]) || key })));
+                            }))),
+                    React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" }, "Tire Set Labels"),
+                        React.createElement("div", { className: "sec-body" },
+                            React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 10, color: "var(--mut)", letterSpacing: 1 } }, "Tire sets are now managed per-car by each crew member in their Tires tab. Labels set there are unique to each car."))),
+                    React.createElement("button", { className: "btn btn-grn", onClick: saveAllSettings }, "Save All Settings"),
+                    React.createElement("div", { style: { height: 24 } }),
+                    React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" }, "Quick Test"),
+                        React.createElement("div", { className: "sec-body" },
+                            React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 9, color: "var(--txt3)", letterSpacing: 1, marginBottom: 12 } }, "DEMO ONLY: writes one test lap to Demo Car #1. This build cannot touch live PITWALL storage."),
+                            React.createElement("button", { className: "btn btn-sm btn-org", onClick: async () => {
+                                    await updateCarData("Car #1", c => ({
+                                        ...c,
+                                        laps: [...(c.laps || []), { time: 94200, at: Date.now(), by: "Test", date: "Test", timeOfDay: "12:00:00", lap: 1, tireMilesOnSet: 2.54, fuelPerLap: 0.95 }],
+                                        totalMileage: (c.totalMileage || 0) + 2.54,
+                                        status: "Racing",
+                                        lastUpdate: Date.now(),
+                                    }));
+                                } }, "Write Test Lap \u2192 Car #1"))),
+                    React.createElement("div", { style: { height: 12 } }),
+                    React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" }, "Demo Data"),
+                        React.createElement("div", { className: "sec-body" },
+                            React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 9, color: "var(--txt3)", letterSpacing: 1, lineHeight: 1.8, marginBottom: 14 } }, "This DEMO build uses separate storage from live PITWALL. Start the simulator, then move around Lead or exit into Overview and watch five virtual cars generate laps, fuel burn, tire mileage, crew presence, notes and occasional tire changes."),
+                            !simRunning ? (React.createElement("button", { className: "btn btn-sm", style: { background: "var(--blu)", color: "#fff", marginBottom: 10 }, onClick: loadDemoData }, "\u25B6 Start Live Simulation")) : (React.createElement("button", { className: "btn btn-sm btn-org", style: { marginBottom: 10 }, onClick: stopSimulation }, "\u25A0 Stop Simulation")),
+                            React.createElement("button", { className: "btn btn-sm btn-ghost", style: { display: "block" }, onClick: clearDemoData }, "Reset Demo Data"),
+                            React.createElement("div", { style: { marginTop: 10, fontFamily: "JetBrains Mono", fontSize: 9, color: simRunning ? "var(--grn)" : "var(--txt3)", letterSpacing: 1 } }, simRunning ? "● SIMULATION ACTIVE — new data every ~3.5 seconds" : "○ Simulation stopped"))),
+                    React.createElement("div", { style: { height: 16 } }),
+                    React.createElement("div", { className: "sec" },
+                        React.createElement("div", { className: "sec-title" }, "Access PINs"),
+                        React.createElement("div", { className: "sec-body" },
+                            React.createElement("div", { style: { fontFamily: "JetBrains Mono", fontSize: 9, color: "var(--mut)", letterSpacing: 2, textTransform: "uppercase", marginBottom: 12 } }, "Leave blank to allow any pin (test mode)"),
+                            React.createElement("div", { className: "f" },
+                                React.createElement("label", null, "Lead PIN"),
+                                React.createElement("input", { type: "password", inputMode: "numeric", placeholder: "Leave blank for open access", style: { letterSpacing: 4 }, defaultValue: ((_a = config.pins) === null || _a === void 0 ? void 0 : _a.master) || "", onBlur: e => updateConfig(cfg => ({ ...cfg, pins: { ...cfg.pins, master: e.target.value } })) })),
+                            React.createElement("div", { className: "f" },
+                                React.createElement("label", null, "Overview PIN"),
+                                React.createElement("input", { type: "password", inputMode: "numeric", placeholder: "Leave blank for open access", style: { letterSpacing: 4 }, defaultValue: ((_b = config.pins) === null || _b === void 0 ? void 0 : _b.overview) || "", onBlur: e => updateConfig(cfg => ({ ...cfg, pins: { ...cfg.pins, overview: e.target.value } })) })))),
+                    React.createElement("div", { style: { height: 16 } }))))));
+}
+class PITWALLBoundary extends Component {
+    constructor(props) {
+        super(props);
+        this.state = { crashed: false, error: null };
+    }
+    static getDerivedStateFromError(error) {
+        return { crashed: true, error };
+    }
+    componentDidCatch(error, info) {
+        console.error("PITWALL render error", error, info);
+    }
+    render() {
+        if (!this.state.crashed)
+            return this.props.children;
+        return (React.createElement("div", { style: {
+                minHeight: "100vh", background: "#111214", color: "#eeeef4", display: "flex",
+                alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "Inter"
+            } },
+            React.createElement("div", { style: { maxWidth: 520, width: "100%", background: "#191a1d", border: "1px solid #343638", padding: 28 } },
+                React.createElement("div", { style: { fontFamily: "Bebas Neue", fontSize: 36, letterSpacing: 2 } }, "PITWALL"),
+                React.createElement("div", { style: { marginTop: 10, fontFamily: "JetBrains Mono", fontSize: 12, color: "#ff4020" } }, "DISPLAY ERROR \u2014 RACE DATA IS SAFE IN STORAGE"),
+                React.createElement("p", { style: { marginTop: 16, lineHeight: 1.6, color: "#a8a8b8", fontSize: 14 } }, "The interface encountered an unexpected error. Your saved race data is stored separately from the display, so reloading is the correct recovery action."),
+                React.createElement("button", { className: "btn btn-grn", style: { marginTop: 18 }, onClick: () => window.location.reload() }, "Reload PITWALL"))));
+    }
+}
+function App() {
+    return (React.createElement(PITWALLBoundary, null,
+        React.createElement(AppContent, null)));
+}
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+<script>(function(){const f=()=>{const r=document.getElementById('root'),b=document.getElementById('boot');if(r&&r.children.length&&b)b.remove();};requestAnimationFrame(()=>requestAnimationFrame(f));setTimeout(f,500);})();</script></body></html>
