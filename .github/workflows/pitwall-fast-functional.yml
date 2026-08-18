@@ -15,8 +15,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Prepare browser driver
+      - name: Prepare corrected static build and browser driver
         run: |
+          python - <<'PY'
+          from pathlib import Path
+          import urllib.request
+          vendor=Path('vendor'); vendor.mkdir(exist_ok=True)
+          url='https://unpkg.com/prop-types@15.8.1/prop-types.min.js'
+          req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 PITWALL-CI'})
+          with urllib.request.urlopen(req,timeout=30) as r: data=r.read()
+          if len(data)<1000: raise RuntimeError('PropTypes download too small')
+          (vendor/'prop-types.min.js').write_bytes(data)
+          p=Path('index.html'); s=p.read_text()
+          marker='<script src="vendor/recharts.js"></script>'
+          prop='<script src="vendor/prop-types.min.js"></script>'
+          if prop not in s:
+              if marker not in s: raise RuntimeError('Recharts script marker missing')
+              s=s.replace(marker,prop+'\n'+marker)
+              p.write_text(s)
+          print('PropTypes bytes:',len(data))
+          print('Corrected index ready')
+          PY
           npm init -y >/dev/null 2>&1
           npm install playwright-core@1.55.0 --no-save
           (which google-chrome || which chromium || which chromium-browser) | tee /tmp/browser-path
@@ -43,31 +62,18 @@ jobs:
             page.on('pageerror',e=>errors.push('PAGE: '+String(e)));
             page.on('console',m=>{if(m.type()==='error') errors.push('CONSOLE: '+m.text())});
             page.on('requestfailed',r=>failed.push(r.url()+' :: '+(r.failure()?.errorText||'unknown')));
-
             const dump=async(label)=>{
               console.log('--- DIAGNOSTIC',label,'---');
-              console.log('URL:',page.url());
               console.log('BODY:',(await page.locator('body').innerText().catch(()=>'' )).slice(0,1200));
-              console.log('HTML:',(await page.content().catch(()=>'' )).slice(0,1600));
-              const state=await page.evaluate(()=>({
-                readyState:document.readyState,
-                React:typeof window.React,
-                ReactDOM:typeof window.ReactDOM,
-                Recharts:typeof window.Recharts,
-                rootChildren:document.querySelector('#root')?.children.length ?? -1,
-                boot:document.querySelector('#boot')?.innerText ?? null,
-                login:!!document.querySelector('.login-bg'),
-                storage:typeof window.storage
-              })).catch(e=>({evaluateError:String(e)}));
+              const state=await page.evaluate(()=>({readyState:document.readyState,React:typeof window.React,ReactDOM:typeof window.ReactDOM,PropTypes:typeof window.PropTypes,Recharts:typeof window.Recharts,rootChildren:document.querySelector('#root')?.children.length??-1,boot:document.querySelector('#boot')?.innerText??null,login:!!document.querySelector('.login-bg'),storage:typeof window.storage})).catch(e=>({evaluateError:String(e)}));
               console.log('STATE:',JSON.stringify(state));
               console.log('ERRORS:',JSON.stringify(errors));
               console.log('FAILED_REQUESTS:',JSON.stringify(failed));
             };
 
             step('login render');
-            await page.goto('http://127.0.0.1:8000/index.html?fast=3',{waitUntil:'networkidle',timeout:20000});
-            try { await page.waitForSelector('.login-bg',{state:'visible',timeout:10000}); }
-            catch(e){ await dump('LOGIN TIMEOUT'); throw e; }
+            await page.goto('http://127.0.0.1:8000/index.html?fast=4',{waitUntil:'networkidle',timeout:20000});
+            try { await page.waitForSelector('.login-bg',{state:'visible',timeout:10000}); } catch(e){ await dump('LOGIN TIMEOUT'); throw e; }
             await dump('LOGIN OK');
 
             step('lead');
@@ -95,6 +101,7 @@ jobs:
             await page.reload({waitUntil:'networkidle'});
             await page.waitForSelector('.login-bg',{state:'visible',timeout:10000});
             const after=await page.evaluate(()=>{let laps=0;for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('pitwall-demo-v1-car-')){try{laps+=(JSON.parse(localStorage.getItem(k)).laps||[]).length}catch(e){}}}return laps});
+            console.log('laps after reload',after);
             if(after<5) throw new Error('Persisted laps missing after reload');
 
             step('overview');
@@ -124,7 +131,7 @@ jobs:
           set -o pipefail
           node /tmp/pitwall-fast.js 2>&1 | tee /tmp/pitwall-fast.log
 
-      - name: Record fast functional result
+      - name: Record result and publish corrected static build
         if: always()
         run: |
           git config user.name 'github-actions[bot]'
@@ -136,8 +143,14 @@ jobs:
             echo '--- log ---'
             cat /tmp/pitwall-fast.log 2>/dev/null || true
           } > fast-functional-result.txt
-          git add fast-functional-result.txt
-          git commit -m 'Record PITWALL fast functional result' || true
+          if [ '${{ steps.e2e.outcome }}' = 'success' ]; then
+            git add index.html vendor/prop-types.min.js fast-functional-result.txt
+            git commit -m 'Publish functionally tested PITWALL PropTypes fix' || true
+          else
+            git add fast-functional-result.txt
+            git commit -m 'Record PITWALL fast functional result' || true
+          fi
+          git pull --rebase origin main || true
           git push || true
 
       - name: Fail if test failed
