@@ -1,0 +1,29 @@
+PASS
+PITWALL LIVE GITHUB PAGES browser test.
+Outcome: success
+--- log ---
+BROWSER: Google Chrome 151.0.7922.108
+LIVE LOAD ATTEMPT 1
+LIVE STATE {"login":true,"boot":null,"React":"object","PropTypes":"object","Recharts":"object"}
+LIVE BODY PITWALL
+RACE TEAM TRACKER
+PITWALL DEMO BUILD
+Isolated from live PITWALL storage — safe to experiment
+SELECT ROLE
+CREW
+FIELD →
+OVERVIEW
+READ ONLY →
+LEAD
+FULL ACCESS →
+UNITS
+IMPERIAL
+METRIC
+STEP lead
+STEP simulation
+LIVE laps before reload 5
+STEP reload
+LIVE laps after reload 6
+STEP overview
+STEP crew
+PASS: LIVE PAGES login + Lead + simulation + persistence + Overview + Crew
